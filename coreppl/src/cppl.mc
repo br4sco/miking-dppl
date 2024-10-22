@@ -9,6 +9,7 @@ include "static-delay.mc"
 include "dppl-arg.mc"
 include "build.mc"
 include "src-location.mc"
+include "dppl-type-check.mc"
 
 -- Backends
 include "coreppl-to-mexpr/compile.mc"
@@ -24,7 +25,7 @@ include "mexpr/utils.mc"
 
 lang CPPLLang =
   MExprAst + MExprCompile + TransformDist + MExprEliminateDuplicateCode +
-  MExprSubstitute + MExprPPL
+  MExprSubstitute + MExprPPL + DTCTypeOf
 
   -- Check if a CorePPL program uses infer
   sem hasInfer =
@@ -52,7 +53,14 @@ match result with ParseOK r then
 
     -- Read and parse the file
     let filename = head r.strings in
-    let ast = parseMCorePPLFile options.test filename in
+    let ast =
+      if options.dpplFrontend then
+        let ast = parseMCoreDPPLFile options.test filename in
+        typeOfExn ast;
+        eraseDecorationsFromTerm ast
+      else
+        parseMCorePPLFile options.test filename
+    in
 
     let noInfer = not (hasInfer ast) in
 
@@ -63,7 +71,7 @@ match result with ParseOK r then
       ---------------------
 
       -- Handle the RootPPL backend in the old way, without using infers.
-      if noInfer then
+      if and noInfer (not options.disableBackcompat) then
         let ast =
           if options.staticDelay then staticDelay ast
           else ast

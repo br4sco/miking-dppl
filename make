@@ -31,16 +31,20 @@ testmi () {
 
 testcppl () {
   set +e
-  cpplout=$(mktemp)
-  compile_cmd="$2 --seed 0 --test --output $cpplout --output-mc --skip-final"
   output=$1
-  compile_output=$($compile_cmd $1 2>&1)
+  cppl=$2
+  cpplout=$(mktemp)
+  compile_cmd="$cppl --seed 0 --test --output $cpplout --output-mc --skip-final"
+  # Add any remaining arguments directly to the compile command
+  shift 2
+  compile_cmd="$compile_cmd $*"
+  compile_output=$($compile_cmd $output 2>&1)
   exit_code=$?
   [ -n "$compile_output" ] && output="$output\n$compile_output"
   if [ $exit_code -ne 0 ]
   then
     echo "$output"
-    echo "ERROR: command '$compile_cmd $1 2>&1' exited with $exit_code"
+    echo "ERROR: command '$compile_cmd $output 2>&1' exited with $exit_code"
     exit 1
   fi
   set -e
@@ -59,6 +63,9 @@ case $1 in
     ;;
   test-cppl)
     testcppl "$2" "$3"
+    ;;
+  test-cdppl)
+    testcppl "$2" "$3" "--dppl-frontend" "--disable-backcompat"
     ;;
   *)
     >&2 echo "Incorrect argument"

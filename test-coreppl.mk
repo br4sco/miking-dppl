@@ -14,6 +14,7 @@ test-files := $(filter-out coreppl/src/transformation.mc,$(test-files))
 test-files := $(filter-out coreppl/src/cppl.mc,$(test-files))
 
 test-infer-files=$(shell find coreppl/test/coreppl-to-mexpr/infer -name "*.mc")
+test-cdppl-files=$(shell find coreppl/test/coreppl-to-mexpr/dppl -name "*.mc")
 test-staticdelay-files=$(shell find coreppl/test/coreppl-to-mexpr/static-delay -name "*.mc")
 test-cli-files=\
   $(shell find coreppl/test/coreppl-to-mexpr/cli -name "*.mc")
@@ -24,7 +25,7 @@ test-cli-files=\
 test-expectation-files=$(shell find coreppl/test/coreppl-to-mexpr/expectation -name "*.mc")
 
 .PHONY: all
-all: compiler cppl
+all: compiler cppl cdppl
 
 
 ############################################
@@ -42,10 +43,13 @@ ${test-files}::
 ###################
 
 .PHONY: cppl
-cppl: ${test-staticdelay-files} ${test-infer-files} ${test-cli-files} ${test-expectation-files}
+cppl: ${test-infer-files} ${test-cli-files} ${test-expectation-files}
 
 .PHONY: infer
 infer: ${test-infer-files}
+
+.PHONY: cdppl
+cdppl: ${test-cdppl-files}
 
 .PHONY: static-delay
 static-delay: ${test-staticdelay-files}
@@ -75,3 +79,6 @@ ${test-staticdelay-files}::
 # Expectation tests
 ${test-expectation-files}::
 	@./make test-cppl $@ "build/${CPPL_NAME}"
+
+${test-cdppl-files}::
+	@./make test-cdppl $@ "build/${CPPL_NAME}"

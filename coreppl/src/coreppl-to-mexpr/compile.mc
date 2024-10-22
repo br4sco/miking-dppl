@@ -395,7 +395,8 @@ lang MExprCompile =
     --       <model> = the entire AST
     --       <pp> = the pretty-print function used to print the result
     match
-      if noInfer then programModelTransform options ast
+      if and noInfer (not options.disableBackcompat) then
+        programModelTransform options ast
       else (inferRuntimes, ast)
     with (inferRuntimes, ast) in
 
