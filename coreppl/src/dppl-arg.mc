@@ -71,7 +71,14 @@ type Options = {
   subsample: Bool,
 
   -- Used in conjuction with subsample, how many subsamples to take
-  subsampleSize: Int
+  subsampleSize: Int,
+
+  -- Use DPPL frontend with (co)effect decorations
+  effectFrontend: Bool,
+
+  -- Disables backwards compatability with core PPL models without the infer
+  -- keyword
+  disableBackcompat: Bool
 }
 
 -- Default values for options
@@ -102,7 +109,9 @@ let default = {
   seed = None (),
   extractSimplification = "none",
   subsample = false,
-  subsampleSize = 1
+  subsampleSize = 1,
+  effectFrontend = false,
+  disableBackcompat = false
 }
 
 -- Options configuration
@@ -239,7 +248,15 @@ let config = [
     int2string default.subsampleSize, "."
        ],
        lam p: ArgPart Options.
-        let o: Options = p.options in {o with subsampleSize = argToIntMin p 1})
+        let o: Options = p.options in {o with subsampleSize = argToIntMin p 1}),
+  ([("--effect-frontend", "", "")],
+   "Use (co)effect frontend",
+   lam p: ArgPart Options.
+     let o: Options = p.options in {o with effectFrontend = true}),
+  ([("--disable-backcompat", "", "")],
+   "Disables backwards compatability with core PPL models without the infer keyword",
+   lam p: ArgPart Options.
+     let o: Options = p.options in {o with disableBackcompat = true})
 ]
 
 -- Menu

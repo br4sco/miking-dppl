@@ -65,6 +65,10 @@ test-coreppl: build/${CPPL_NAME}
 test-coreppl-compiler:
 	@$(MAKE) -s -f test-coreppl.mk compiler
 
+.PHONY: test-coredppl
+test-coredppl: build/${CPPL_NAME}
+	@$(MAKE) -s -f test-coreppl.mk cdppl
+
 #############
 ## RootPPL ##
 #############

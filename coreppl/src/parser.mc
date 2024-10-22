@@ -4,6 +4,7 @@ include "mexpr/keyword-maker.mc"
 include "mexpr/builtin.mc"
 
 include "coreppl.mc"
+include "dppl-type-check.mc"
 include "inference/smc.mc"
 
 -- Include the inference method definition definition files.
@@ -263,3 +264,61 @@ let parseMExprPPLString = lam cpplstr.
   use DPPLParser in
   let ast = parseMExprStringKeywordsExn pplKeywords cpplstr in
   makeKeywords ast
+
+lang DPPLEffectsParser = DPPLParser + DTCAst
+  -- DPPL parser with (co)effect annotations on types.
+
+  syn Type =
+  -- This type only lives in the parser and is transformed to an effect
+  -- annotation in a `TyArrowE`. The type is therefore only allowed at the `to`
+  -- field in arrow types.
+  | TyRnd { info : Info, ty : Type }
+
+  sem tyWithInfo info =| TyRnd r -> TyRnd { r with info = info }
+  sem infoTy =| TyRnd r -> r.info
+
+  sem smapAccumL_Type_Type f acc =
+  | TyRnd r ->
+    match f acc r.ty with (acc, ty) in
+    (acc, TyRnd { r with ty = ty })
+
+  sem isTypeKeyword =
+  | TyFloatC _ -> true
+  | TyRnd _ -> true
+
+  sem matchTypeKeywordString (info: Info) =
+  | "Rnd" -> Some(1, lam seq. TyRnd { info = info, ty = get seq 0 })
+  | "FloatA" -> Some(0, lam seq. TyFloatC { info = info, c = A () })
+  | "FloatN" -> Some(0, lam seq. TyFloatC { info = info, c = N () })
+
+  sem decorateTypesOnTermsExn : Expr -> Expr
+  sem decorateTypesOnTermsExn =| tm ->
+    smap_Expr_Expr decorateTypesOnTermsExn (smap_Expr_Type decorateTypesExn tm)
+
+  sem decorateTypesExn : Type -> Type
+  sem decorateTypesExn =
+  | TyFloat r -> TyFloatC { info = r.info, c = P () }
+  | TyArrow r ->
+    let ty = TyArrowE { info = r.info, from = r.from, to = r.to, e = Det () } in
+    smap_Type_Type decorateTypesExn ty
+  | TyArrow (r & {to = TyRnd {ty = to}}) ->
+    let ty = TyArrowE { info = r.info, from = r.from, to = to, e = Rnd () } in
+    smap_Type_Type decorateTypesExn ty
+  | TyRnd r ->
+    errorSingle [r.info]
+      "Parse error: Rnd decoration appeared outside an arrow return type"
+  | ty -> smap_Type_Type decorateTypesExn ty
+end
+
+let parseMCoreDPPLFile = lam keepUtests. lam filename.
+  use DPPLEffectsParser in
+  let config = {
+    defaultBootParserParseCorePPLFileArg with
+    keepUtests = keepUtests,
+    eliminateDeadCode = false
+  } in
+  let ast = parseMCoreFile config filename in
+  let ast = symbolizeAllowFree ast in
+  let ast = makeKeywords ast in
+  let ast = decorateTypesOnTermsExn ast in
+  ast
