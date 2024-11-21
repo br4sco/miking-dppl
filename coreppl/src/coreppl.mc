@@ -1311,11 +1311,12 @@ let observe_ = use Observe in
 let weight_ = use Weight in
   lam w. TmWeight {weight = w, ty = tyunknown_, info = NoInfo ()}
 
- let solveode_ = use SolveODE in
-   lam m. lam i. lam t.
+let solveodeWithStepSize_ =
+  use SolveODE in
+  lam step. lam m. lam i. lam t.
     TmSolveODE {
       method = ODESolverDefault {
-        stepSize = float_ 0.01,
+        stepSize = step,
         add = uconst_ (CAddf ()),
         smul = uconst_ (CMulf ())
       },
@@ -1325,6 +1326,8 @@ let weight_ = use Weight in
       ty = tyunknown_,
       info = NoInfo ()
     }
+
+let solveode_ = solveodeWithStepSize_ (float_ 0.01)
 
 let prune_ = use Prune in
   lam d. TmPrune {dist = d, ty = tyunknown_ , info = NoInfo ()}
