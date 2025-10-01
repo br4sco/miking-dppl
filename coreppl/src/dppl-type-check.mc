@@ -315,6 +315,9 @@ lang DTCFloatTypeAst = DTCAstBase + FloatTypeAst + PrettyPrint
   sem maxcType =
   | TyFloatC r -> r.c
 
+  sem mincType =
+  | TyFloatC r -> r.c
+
   sem subtype =
   | (TyFloatC l, TyFloatC r) -> dtcLeqc l.c r.c
 
@@ -326,9 +329,6 @@ lang DTCFloatTypeAst = DTCAstBase + FloatTypeAst + PrettyPrint
   | (TyFloatC l, TyFloatC r) ->
     Some (if dtcLeqc r.c l.c then TyFloatC r else TyFloatC l)
 
-  sem mincType =
-  | TyFloatC r -> r.c
-
   sem setC : DTCCoeffect -> Type -> Type
   sem setC c =
   | TyFloatC r -> TyFloatC { r with c = c }
@@ -337,84 +337,113 @@ end
 
 lang DTCFunTypeAst = DTCAstBase + FunTypeAst + PrettyPrint
   -- Arrow types are annotated with effects
-  syn Type =| TyArrowE {info : Info, from : Type, to : Type, e : DTCEffect}
+  syn Type =| TyArrowCE {
+    info : Info, from : Type, to : Type, c: DTCCoeffect, e : DTCEffect }
 
   -- Setters/Getters
-  sem tyWithInfo info =| TyArrowE r -> TyArrowE {r with info = info}
-  sem infoTy =| TyArrowE r -> r.info
+  sem tyWithInfo info =| TyArrowCE r -> TyArrowCE {r with info = info}
+  sem infoTy =| TyArrowCE r -> r.info
 
   -- Shallow map/fold
   sem smapAccumL_Type_Type f acc =
-  | TyArrowE r ->
+  | TyArrowCE r ->
     match f acc r.from with (acc, from) in
     match f acc r.to with (acc, to) in
-    (acc, TyArrowE {r with from = from, to = to})
+    (acc, TyArrowCE {r with from = from, to = to})
 
   -- Eq
   sem eqTypeH (typeEnv : EqTypeEnv) (free : EqTypeFreeEnv) (lhs : Type) =
-  | TyArrowE r ->
-    match unwrapType lhs with TyArrowE l then
+  | TyArrowCE r ->
+    match unwrapType lhs with TyArrowCE l then
       match eqTypeH typeEnv free l.from r.from with Some free then
-        if dtcEqe l.e r.e then eqTypeH typeEnv free l.to r.to
+        if dtcEqc l.c r.c then
+          if dtcEqe l.e r.e then eqTypeH typeEnv free l.to r.to
+          else None ()
         else None ()
       else None ()
     else None ()
 
   -- Pprint
   sem typePrecedence =
-  | TyArrowE _ -> 0
+  | TyArrowCE _ -> 0
 
   sem getTypeStringCode (indent : Int) (env: PprintEnv) =
-  | TyArrowE r ->
+  | TyArrowCE r ->
     match printTypeParen indent 1 env r.from with (env, from) in
     match getTypeStringCode indent env r.to with (env, to) in
-    match r.e with R _ then (env, join [from, " -> (R ", to, ")"])
-    else (env, join [from, " -> ", to])
+    switch (r.c, r.e)
+    case (A _, D _) then (env, join [from, " -> ", to])
+    case (A _, e) then (env, join [from, " ->", dtcEffectToString e, " ", to])
+    case (c, D _) then (env, join [from, " ->", dtcCoeffectToString c, " ", to])
+    case (c, e) then (env, join [
+      from, " ->", dtcCoeffectToString c, ",", dtcEffectToString e, " ", to ])
+    end
 
   -- Builder
-  sem tyarrowe_ : Type -> Type -> DTCEffect -> Type
-  sem tyarrowe_ from to =| e ->
-    TyArrowE { info = NoInfo (), from = from, to = to, e = e }
+  sem tyarrowe_ : Type -> Type -> DTCCoeffect -> DTCEffect -> Type
+  sem tyarrowe_ from to c =| e ->
+    TyArrowCE { info = NoInfo (), from = from, to = to, c = c, e = e }
 
-  sem ityarrowe_ : Info -> Type -> Type -> DTCEffect -> Type
-  sem ityarrowe_ info from to =| e ->
-    TyArrowE { info = info, from = from, to = to, e = e }
+  sem ityarrowe_ : Info -> Type -> Type -> DTCCoeffect -> DTCEffect -> Type
+  sem ityarrowe_ info from to c =| e ->
+    TyArrowCE { info = info, from = from, to = to, c = c, e = e }
 
   -- Conversions
   sem eraseDecorationsType =
-  | TyArrowE r ->
+  | TyArrowCE r ->
     smap_Type_Type eraseDecorationsType
       (TyArrow { info = r.info, from = r.from, to = r.to })
 
   sem fromMExprTy =
   | TyArrow r ->
-    smap_Type_Type fromMExprTy (ityarrowe_ r.info r.from r.to (D ()))
+    smap_Type_Type fromMExprTy (ityarrowe_ r.info r.from r.to (A ()) (D ()))
 
   -- Coeffect/Type operations
+  sem leqcType c =
+  | TyArrowCE r -> dtcLeqc c r.c
+
+  sem leqTypecH =
+  | (TyArrowCE r, c) -> dtcLeqc r.c c
+
+  sem eqcType c =
+  | TyArrowCE r -> dtcEqc c r.c
+
+  sem mulcType c =
+  | TyArrowCE r -> TyArrowCE { r with c = dtcMulc c r.c }
+
+  sem maxcType =
+  | TyArrowCE r -> r.c
+
+  sem mincType =
+  | TyArrowCE r -> r.c
+
   sem subtype c =
-  | (TyArrowE l, TyArrowE r) ->
+  | (TyArrowCE l, TyArrowCE r) ->
     allb [
       subtype (r.from, l.from),
       subtype (l.to, r.to),
+      dtcLeqc l.c r.c,
       dtcLeqe r.e l.e
     ]
 
   sem joinType =
-  | (TyArrowE l, TyArrowE r) ->
+  | (TyArrowCE l, TyArrowCE r) ->
     optionBind (meetType (l.from, r.from)) (lam from.
       optionBind (joinType (l.to, r.to)) (lam to.
         Some
-          (TyArrowE
-            (if dtcLeqe r.e l.e then { r with from = from, to = to }
+          (TyArrowCE
+            (if and (dtcLeqc l.c r.c) (dtcLeqe r.e l.e) then
+              { r with from = from, to = to }
              else { l with from = from, to = to }))))
 
   sem meetType =
-  | (TyArrowE l, TyArrowE r) ->
+  | (TyArrowCE l, TyArrowCE r) ->
     optionBind (joinType (l.from, r.from)) (lam from.
       optionBind (meetType (l.to, r.to)) (lam to.
         Some
-          (TyArrowE
-            (if dtcLeqe r.e l.e then { l with from = from, to = to }
+          (TyArrowCE
+            (if and (dtcLeqc l.c r.c) (dtcLeqe r.e l.e) then
+              { l with from = from, to = to }
              else { r with from = from, to = to }))))
 end
 
@@ -435,8 +464,10 @@ lang DTCSeqTypeAst = DTCAstBase + SeqTypeAst
   | ty & TySeq _ -> smap_Type_Type (mulcType c) ty
 
   sem maxcType =
-  | ty & TySeq _ ->
-    sfold_Type_Type (lam c. lam ty. dtcMaxc c (maxcType ty)) (M ()) ty
+  | TySeq r -> maxcType r.ty
+
+  sem mincType =
+  | TySeq r -> mincType r.ty
 
   sem subtype =
   | (TySeq l, TySeq r) -> subtype (l.ty, r.ty)
@@ -449,9 +480,6 @@ lang DTCSeqTypeAst = DTCAstBase + SeqTypeAst
 
   sem meetType =
   | (TySeq l, TySeq r) -> _dtcSeqJoinMeet meetType l r
-
-  sem mincType =
-  | TySeq r -> mincType r.ty
 end
 
 lang DTCRecordTypeAst = DTCAstBase + RecordTypeAst
@@ -473,6 +501,10 @@ lang DTCRecordTypeAst = DTCAstBase + RecordTypeAst
   sem maxcType =
   | ty & TyRecord _ ->
     sfold_Type_Type (lam c. lam ty. dtcMaxc c (maxcType ty)) (M ()) ty
+
+  sem mincType =
+  | ty & (TyRecord _) ->
+    sfold_Type_Type (lam c. lam ty. dtcMinc c (mincType ty)) (A ()) ty
 
   sem subtype =
   | (TyRecord l, TyRecord r) ->
@@ -508,10 +540,6 @@ lang DTCRecordTypeAst = DTCAstBase + RecordTypeAst
 
   sem meetType =
   | (TyRecord l, TyRecord r) -> _dtcRecordJoinMeet meetType l r
-
-  sem mincType =
-  | ty & (TyRecord _) ->
-    sfold_Type_Type (lam c. lam ty. dtcMinc c (mincType ty)) (A ()) ty
 end
 
 lang DTCVarTypeAst = DTCAstBase + VarTypeAst
@@ -657,8 +685,28 @@ lang DTCTypeError = Ast + DTCEnv + DTCFloatTypeAst + PrettyPrint
   | DTCInvalidContextError (Option (Info, Name))
   | DTCContextConstraintError (Option (Info, DTCCoeffect,  DTCEnv))
 
+  sem typeErrorToString : DTCTypeError -> String
+  sem typeErrorToString =
+  | DTCArrowError _ -> "ArrowError"
+  | DTCArgError  _ -> "ArgError"
+  | DTCJoinError  _ -> "JoinError"
+  | DTCPatError _ -> "PatError"
+  | DTCAnotError  _ -> "AnotError"
+  | DTCSolveODEModelError _ -> "SolveODEModelError"
+  | DTCDiffFnError _ -> "DiffFnError"
+  | DTCPolyDistError _ -> "PolyDistError"
+  | DTCPolyConstError _ -> "PolyConstError"
+  | DTCUnuspportedTermError _ -> "UnuspportedTermError"
+  | DTCInvalidContextError _ -> "InvalidContextError"
+  | DTCContextConstraintError _ -> "ContextConstraintError"
+
   sem typeErrorToMsg : DTCTypeError -> (Info, String)
-  sem typeErrorToMsg =
+  sem typeErrorToMsg =| err ->
+    match typeErrorToMsgH err with (info, msg) in
+    (info, join [typeErrorToString err, ":\n", msg])
+
+  sem typeErrorToMsgH : DTCTypeError -> (Info, String)
+  sem typeErrorToMsgH =
   | DTCArrowError (Some (info, ty)) ->
     (info, _typeErrorToMsg2 ["Function type"] [type2str ty])
   | DTCArgError (Some (info, (expected, found))) ->
@@ -723,6 +771,9 @@ end
 lang DTCTypeOfBase = DTCTypeError + DTCEnv
   type ResultOk = {e : DTCEffect, ty : Type, fv : Set Name}
 
+  sem promote : DTCEnv -> Set Name -> Type -> Type
+  sem promote env =| fv -> let c = dtcEnvMaxc (dtcEnvWeaken fv env) in mulcType c
+
   sem typeOfH : DTCEnv -> Expr -> Result DTCTypeError DTCTypeError ResultOk
   sem typeOfH env =| tm ->
     result.err (DTCUnuspportedTermError (Some (infoTm tm)))
@@ -731,8 +782,7 @@ lang DTCTypeOfBase = DTCTypeError + DTCEnv
     : DTCEnv -> Expr -> Result DTCTypeError DTCTypeError ResultOk
   sem typeOfHPromote env =| tm ->
     result.bind (typeOfH env tm) (lam tm.
-      let c = dtcEnvMaxc (dtcEnvWeaken tm.fv env) in
-      result.ok { tm with ty = mulcType c tm.ty })
+      result.ok { tm with ty = promote env tm.fv tm.ty })
 
   sem resultOK
     : [DTCEffect] -> Type -> [Set Name]
@@ -767,8 +817,7 @@ lang DTCTypeOfBase = DTCTypeError + DTCEnv
         (mapAccumL
            (lam acc. lam r.
              match acc with (e, fv) in
-             ((dtcMule e r.e, setUnion fv r.fv),
-              mulcType (dtcEnvMaxc (dtcEnvWeaken r.fv env)) r.ty))
+             ((dtcMule e r.e, setUnion fv r.fv), promote env r.fv r.ty))
            (D (), setEmpty nameCmp)
            rs))
 
@@ -798,27 +847,33 @@ end
 
 lang DTCTypeOfLam = LamAst + DTCTypeOfBase
   sem typeOfH env =
-  | TmLam (r & {tyAnnot = TyUnknown _}) ->
+  | TmLam (r &
+    {tyAnnot = TyUnknown _}) ->
     result.err (DTCAnotError (Some r.info))
   | TmLam r ->
     let env = dtcEnvInsert r.ident r.tyAnnot env in
-    result.bind (typeOfHPromote env r.body)
+    result.bind (typeOfH env r.body)
       (lam body.
+        let promote = promote env body.fv in
         result.ok {
           e = D (),
-          ty = ityarrowe_ r.info r.tyAnnot body.ty body.e,
-          fv = setRemove r.ident body.fv
-        })
+          ty = promote
+                 (ityarrowe_ r.info r.tyAnnot (promote body.ty) (A ()) body.e),
+          fv = setRemove r.ident body.fv })
 end
 
 lang DTCTypeOfApp = AppAst + DTCFunTypeAst + FreeVars + DTCTypeOfBase
   sem typeOfH env =
   | TmApp r ->
     result.bind (typeOfH env r.lhs) (lam lhs.
-      match lhs with {ty = TyArrowE arr} then
+      -- NOTE(oerikss, 2025-10-01): Because T1 ->c T2 <: T1 ->A T2 for all c we
+      -- do not need to check the coeffect modifier of the arrow type here and
+      -- we do not need to promote the LHS.
+      match lhs with {ty = TyArrowCE arr} then
         result.bind (typeOfHPromote env r.rhs) (lam rhs.
           if subtype (rhs.ty, arr.from) then
-            resultOK [lhs.e, arr.e, rhs.e] arr.to [lhs.fv, rhs.fv]
+            let fv = setUnion lhs.fv rhs.fv in
+            resultOK [lhs.e, arr.e, rhs.e] (promote env fv arr.to) [fv]
           else argErr r.rhs arr.from rhs.ty)
       else result.err (DTCArrowError (Some (infoTm r.lhs, lhs.ty))))
 end
@@ -839,7 +894,7 @@ lang DTCTyConst = TyConst + DTCTypeError + DTCTypeOfBase
   sem dtcConstType info =
   | const ->
     -- NOTE(oerikss, 2024-10-09): By default we type constant functions as
-    -- deterministic and non-differential.
+    -- deterministic and measurable.
     let ty = fromMExprTy (tyConst const) in
     match ty with TyAll _ then result.err (DTCPolyConstError (Some info))
     else result.ok ty
@@ -945,9 +1000,10 @@ lang DTCTypeOfInfer = Infer + DTCTypeOfBase
         let wenv = dtcEnvWeaken model.fv env in
         if dtcLeqEnvc wenv (M ()) then
           let err =
-            argErr r.model (tyarrowe_ tyunit_ (tyvar_ "a") (R ())) model.ty
+            argErr r.model
+              (tyarrowe_ tyunit_ (tyvar_ "a") (M ()) (R ())) model.ty
           in
-          match model with {ty = TyArrowE (arr & {from = TyRecord rr})} then
+          match model with {ty = TyArrowCE (arr & {from = TyRecord rr})} then
             if mapIsEmpty rr.fields then
               resultOK [method.e, model.e]
                 (TyDist { info = r.info, ty = arr.to })
@@ -1053,7 +1109,7 @@ lang DTCTypeOfDiff = Diff + IsIsomorficToRn + DTCTypeOfBase
       -- lower modifiers to A.
       (typeOfH env r.fn) (typeOfHPromote env r.arg) (typeOfH env r.darg)
       (lam fn. lam arg. lam darg.
-        match fn with {ty = TyArrowE (arr & {e = D _})} then
+        match fn with {ty = TyArrowCE (arr & {e = D _})} then
           if and (eqcType mod arr.from) (isIsomorficToRn arr.to)
           then
             if subtype (arg.ty, arr.from) then
@@ -1078,8 +1134,8 @@ lang DTCTypeOfSolveODE = SolveODE + IsIsomorficToRn + DTCTypeOfBase
       (lam method. lam model. lam init. lam endTime.
         match model
           with
-          {ty = TyArrowE (arr1 & {
-            from = TyFloatC _, to = TyArrowE (arr2 & {e = D _}), e = D _})}
+          {ty = TyArrowCE (arr1 & {
+            from = TyFloatC _, to = TyArrowCE (arr2 & {e = D _}), e = D _})}
         then
           if allb [
             isIsomorficToRn arr2.from,
@@ -1090,7 +1146,7 @@ lang DTCTypeOfSolveODE = SolveODE + IsIsomorficToRn + DTCTypeOfBase
                 (meetType (arr2.from, arr2.to))
             in
             let modelTy =
-              TyArrowE { arr1 with to = tyarrowe_ ty ty (D ()) }
+              TyArrowCE { arr1 with to = tyarrowe_ ty ty (A ()) (D ()) }
             in
             if subtype (model.ty, modelTy) then
               if subtype (init.ty, ty) then
@@ -1129,6 +1185,11 @@ end
 -- │ Type of Constants │
 -- └───────────────────┘
 
+let iarr_ = lam info. lam from. lam to.
+  use DTCAst in ityarrowe_ info from to (A ()) (D ())
+let arr_ = lam from. lam to.
+  use DTCAst in ityarrowe_ (NoInfo ()) from to (A ()) (D ())
+
 lang DTCFloatType = DTCTyConst
   sem dtcConstType info =| CFloat _ -> result.ok (ityfloatc_ info (M ()))
 end
@@ -1137,36 +1198,32 @@ lang DTCArithFloatType = ArithFloatAst + DTCTyConst
   sem dtcConstType info =
   | CAddf _ | CSubf _ | CMulf _ | CDivf _ ->
     let tyfloata = ityfloatc_ info (A ()) in
-    let tyarrowed = lam from. lam to. ityarrowe_ info from to (D ()) in
-    result.ok (tyarrowed tyfloata (tyarrowed tyfloata tyfloata))
+    let arr = lam from. lam to. iarr_ info from to in
+    result.ok (arr tyfloata (arr tyfloata tyfloata))
   | CNegf _ ->
     let tyfloata = ityfloatc_ info (A ()) in
-    result.ok (ityarrowe_ info tyfloata tyfloata (D ()))
+    result.ok (iarr_ info tyfloata tyfloata)
 end
 
 lang DTCElementaryFunctionsType = ElementaryFunctions + DTCTyConst
   sem dtcConstType info =
   | CSin _ | CCos _ | CSqrt _  | CExp _ | CLog _ ->
     let tyfloata = ityfloatc_ info (A ()) in
-    result.ok (ityarrowe_ info tyfloata tyfloata (D ()))
+    result.ok (iarr_ info tyfloata tyfloata)
   | CPow _ ->
     let tyfloata = ityfloatc_ info (A ()) in
-    let tyarrowed = lam from. lam to. ityarrowe_ info from to (D ()) in
-    result.ok (tyarrowed tyfloata (tyarrowed tyfloata tyfloata))
+    let arr = lam from. lam to. iarr_ info from to in
+    result.ok (arr tyfloata (arr tyfloata tyfloata))
 end
 
 lang DTCCmpFloatAstType = CmpFloatAst + DTCTyConst
   sem dtcConstType info =
   | CEqf _ | CLtf _ | CLeqf _ | CGtf _ | CGeqf _ | CNeqf _ ->
     let tyfloatp = ityfloatc_ info (P ()) in
-    let tyarrowed = lam from. lam to. ityarrowe_ info from to (D ()) in
-    result.ok (tyarrowed tyfloatp (tyarrowed tyfloatp (itybool_ info)))
+    let arr = lam from. lam to. iarr_ info from to in
+    result.ok (arr tyfloatp (arr tyfloatp (itybool_ info)))
 end
 
-let _iarrd = lam info. lam from. lam to.
-  use DTCAst in ityarrowe_ info from to (D ())
-let _arrd = lam from. lam to.
-  use DTCAst in ityarrowe_ (NoInfo ()) from to (D ())
 let _a = tyvar_ "a"
 let _b = tyvar_ "b"
 
@@ -1174,7 +1231,7 @@ lang DTCSysType = SysAst + DTCTypeOfConst
   sem dtcConstType info =
   | CExit _ -> result.ok (TyBot { info = info })
   | CError _ ->
-    result.ok (ityarrowe_ info (itystr_ info) (TyBot { info = info }) (D ()))
+    result.ok (iarr_ info (itystr_ info) (TyBot { info = info }))
 end
 
 lang DTCSeqOpType = SeqOpAst + DTCTypeOfConst
@@ -1190,27 +1247,27 @@ lang DTCSeqOpType = SeqOpAst + DTCTypeOfConst
         result.ok {
           rhs with
           ty =
-            foldr1 (_iarrd r.info) [ityint_ r.info, seqr.ty, rhs.ty]
+            foldr1 (iarr_ r.info) [ityint_ r.info, seqr.ty, rhs.ty]
         }
       else _seqargerr r.rhs rhs.ty)
   | TmApp (r & {lhs = TmConst {val = CGet _}}) ->
     result.bind (typeOfHPromote env r.rhs) (lam rhs.
       match rhs with {ty = TySeq seqr} then
-        result.ok { rhs with ty = _iarrd r.info (ityint_ r.info) seqr.ty }
+        result.ok { rhs with ty = iarr_ r.info (ityint_ r.info) seqr.ty }
       else _seqargerr r.rhs rhs.ty)
   | TmApp (r & {lhs = TmConst {val = CCons _}}) ->
     result.bind (typeOfHPromote env r.rhs) (lam rhs.
       let seq = ityseq_ r.info rhs.ty in
-      result.ok { rhs with ty = _iarrd r.info seq seq })
+      result.ok { rhs with ty = iarr_ r.info seq seq })
   | TmApp (r & {lhs = TmConst {val = CSnoc _}}) ->
     result.bind (typeOfHPromote env r.rhs) (lam rhs.
       match rhs with {ty = TySeq seqr} then
-        result.ok { rhs with ty = _iarrd r.info seqr.ty rhs.ty }
+        result.ok { rhs with ty = iarr_ r.info seqr.ty rhs.ty }
       else _seqargerr r.rhs rhs.ty)
   | TmApp (r & {lhs = TmConst {val = CConcat _ }}) ->
     result.bind (typeOfHPromote env r.rhs) (lam rhs.
       match rhs with {ty = TySeq _} then
-        result.ok { rhs with ty = _iarrd r.info rhs.ty rhs.ty }
+        result.ok { rhs with ty = iarr_ r.info rhs.ty rhs.ty }
       else  _seqargerr r.rhs rhs.ty)
   | TmApp (r & {lhs = TmConst {val = CLength _}}) ->
     result.bind (typeOfHPromote env r.rhs) (lam rhs.
@@ -1233,60 +1290,68 @@ lang DTCSeqOpType = SeqOpAst + DTCTypeOfConst
         result.ok { rhs with ty = itybool_ r.info }
       else _seqargerr r.rhs rhs.ty)
   | TmApp (r & {lhs = TmConst {val = CMap _}}) ->
+    -- NOTE(oerikss, 2025-10-01): See notes on general application.
     result.bind (typeOfH env r.rhs) (lam rhs.
-      match rhs with {ty = TyArrowE arr} then
+      match rhs with {ty = TyArrowCE arr} then
         let seq = ityseq_ r.info in
         result.ok {
           rhs with
-          ty = ityarrowe_ r.info (seq arr.from) (seq arr.to) arr.e
+          ty = ityarrowe_ r.info (seq arr.from) (seq arr.to) (A ()) arr.e
         }
-      else argErr r.rhs (_arrd _a _b) rhs.ty)
+      else argErr r.rhs (arr_ _a _b) rhs.ty)
   | TmApp (r & {lhs = TmConst {val = CMapi _}}) ->
+    -- NOTE(oerikss, 2025-10-01): See notes on general application.
     result.bind (typeOfH env r.rhs) (lam rhs.
       match rhs with
-        {ty = TyArrowE (arr1 & {from = TyInt _, to = TyArrowE arr2})}
+        { ty = TyArrowCE (arr1 & {from = TyInt _, to = TyArrowCE arr2}) }
       then
         let seq = ityseq_ r.info in
         result.ok {
           rhs with
           ty = ityarrowe_ r.info (seq arr2.from) (seq arr2.to)
+                 (A ())
                  (dtcMule arr1.e arr2.e)
         }
-      else argErr r.rhs (foldr1 _arrd [tyint_, _a, _b]) rhs.ty)
+      else argErr r.rhs (foldr1 arr_ [tyint_, _a, _b]) rhs.ty)
   | TmApp (r & {lhs = TmConst {val = CIter _}}) ->
-    result.bind (typeOfH env r.rhs) (lam rhs.
-      let err = argErr r.rhs (_arrd _a tyunit_) rhs.ty in
-      match rhs with {ty = TyArrowE (arr & {to = TyRecord rr})} then
+    -- NOTE(oerikss, 2025-10-01): See notes on general application.
+    result.bind (typeOfHPromote env r.rhs) (lam rhs.
+      let err = argErr r.rhs (arr_ _a tyunit_) rhs.ty in
+      match rhs with {ty = TyArrowCE (arr & {to = TyRecord rr})} then
         if mapIsEmpty rr.fields then
           result.ok {
           rhs with
-          ty = ityarrowe_ r.info (ityseq_ r.info arr.from) arr.to arr.e
+          ty = ityarrowe_ r.info (ityseq_ r.info arr.from) arr.to (A ()) arr.e
         }
         else err
       else err)
   | TmApp (r & {lhs = TmConst {val = CIteri _}}) ->
-    result.bind (typeOfH env r.rhs) (lam rhs.
-      let err = argErr r.rhs (foldr1 _arrd [tyint_, _a, tyunit_]) rhs.ty in
+    -- NOTE(oerikss, 2025-10-01): See notes on general application.
+    result.bind (typeOfHPromote env r.rhs) (lam rhs.
+      let err = argErr r.rhs (foldr1 arr_ [tyint_, _a, tyunit_]) rhs.ty in
       match rhs with
-        {ty = TyArrowE (arr1 & {
-          from = TyInt _, to = TyArrowE (arr2 & {to = TyRecord rr})})}
+        { ty = TyArrowCE (arr1 & {
+          from = TyInt _, to = TyArrowCE (arr2 & {
+            to = TyRecord rr})}) }
       then
         if mapIsEmpty rr.fields then
           let seq = ityseq_ r.info in
           result.ok {
             rhs with
             ty = ityarrowe_ r.info (seq arr2.from) arr2.to
+                   (A ())
                    (dtcMule arr1.e arr2.e)
           }
         else err
       else err)
   | TmApp (r & {lhs = TmConst {val = CFoldl _}}) ->
-    result.bind (typeOfH env r.rhs) (lam rhs.
-      let err = argErr r.rhs (foldr1 _arrd [_a, _b, _a]) rhs.ty in
-      match rhs with {ty = TyArrowE (arr1 & {to = TyArrowE arr2})} then
+    -- NOTE(oerikss, 2025-10-01): See notes on general application.
+    result.bind (typeOfHPromote env r.rhs) (lam rhs.
+      let err = argErr r.rhs (foldr1 arr_ [_a, _b, _a]) rhs.ty in
+      match rhs with { ty = TyArrowCE (arr1 & {to = TyArrowCE arr2}) } then
         optionMapOr err
           (lam ty.
-            let arr = ityarrowe_ r.info in
+            let arr = lam from. lam to. ityarrowe_ r.info from to (A ()) in
             result.ok {
               rhs with
               ty =
@@ -1298,12 +1363,13 @@ lang DTCSeqOpType = SeqOpAst + DTCTypeOfConst
           (joinType (arr1.from, arr2.to))
       else err)
   | TmApp (r & {lhs = TmConst {val = CFoldr _}}) ->
-    result.bind (typeOfH env r.rhs) (lam rhs.
-      let err = argErr r.rhs (foldr1 _arrd [_a, _b, _b]) rhs.ty in
-      match rhs with {ty = TyArrowE (arr1 & {to = TyArrowE arr2})} then
+    -- NOTE(oerikss, 2025-10-01): See notes on general application.
+    result.bind (typeOfHPromote env r.rhs) (lam rhs.
+      let err = argErr r.rhs (foldr1 arr_ [_a, _b, _b]) rhs.ty in
+      match rhs with { ty = TyArrowCE (arr1 & {to = TyArrowCE arr2}) } then
         optionMapOr err
           (lam ty.
-            let arr = ityarrowe_ r.info in
+            let arr = lam from. lam to. ityarrowe_ r.info from to (A ()) in
             result.ok {
               rhs with
               ty =
@@ -1318,16 +1384,17 @@ lang DTCSeqOpType = SeqOpAst + DTCTypeOfConst
     lhs = TmConst {val = CCreate _ | CCreateList _ | CCreateRope _}})}) ->
     result.bind2 (typeOfH env r1.rhs) (typeOfH env r2.rhs) (lam rhs1. lam rhs2.
       match rhs1.ty with TyInt _ then
-        match rhs2.ty with TyArrowE (arr & {from = TyInt _}) then
+        -- NOTE(oerikss, 2025-10-01): See notes on general application.
+        match rhs2.ty with TyArrowCE (arr & {from = TyInt _}) then
           resultOK [rhs1.e, arr.e] (ityseq_ r2.info arr.to) [rhs1.fv, rhs2.fv]
-        else argErr r2.rhs (_arrd tyint_ _a) rhs2.ty
+        else argErr r2.rhs (arr_ tyint_ _a) rhs2.ty
       else argErr r1.rhs tyint_ rhs1.ty)
   | TmApp (r & {lhs = TmConst {val = CSplitAt _}}) ->
     result.bind (typeOfHPromote env r.rhs) (lam rhs.
       match rhs with {ty = TySeq _} then
         result.ok {
           rhs with
-          ty = _iarrd r.info (ityint_ r.info)
+          ty = iarr_ r.info (ityint_ r.info)
                  (itytuple_ r.info [rhs.ty, rhs.ty])
         }
       else _seqargerr r.rhs r.ty)
@@ -1335,7 +1402,7 @@ lang DTCSeqOpType = SeqOpAst + DTCTypeOfConst
     result.bind (typeOfHPromote env r.rhs) (lam rhs.
       let int = ityint_ r.info in
       match rhs with {ty = TySeq _} then
-        result.ok { rhs with ty = foldr1 (_iarrd r.info) [int, int, rhs.ty] }
+        result.ok { rhs with ty = foldr1 (iarr_ r.info) [int, int, rhs.ty] }
       else _seqargerr r.rhs r.ty)
 end
 
@@ -1459,9 +1526,9 @@ use TestLang in
 -- Drop "module name" for brevity
 let _D = D () in
 let _R = R () in
-let _A = (A ()) in
-let _P = (P ()) in
-let _M = (M ()) in
+let _A = A () in
+let _P = P () in
+let _M = M () in
 
 -- Define some shorthand names. We order these to make testing easier.
 let _x = nameNoSym "x" in
@@ -1475,8 +1542,12 @@ let _h = nameNoSym "h" in
 
 let alltypes = [
   tyfloatc_ _A, tyfloatc_ _P, tyfloatc_ _M,
-  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _D,
-  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _R,
+  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _A _D,
+  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _A _R,
+  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _P _D,
+  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _P _R,
+  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _M _D,
+  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _M _R,
   tytuple_ [tyfloatc_ _A, tyfloatc_ _P, tyfloatc_ _M],
   tyseq_ (tyfloatc_ _A),
   tyint_,
@@ -1493,8 +1564,8 @@ utest
   eraseDecorationsType
     (tyarrowe_
        (tyfloatc_ _A)
-       (tyarrowe_ (tychar_) (tyfloatc_ _A) _D)
-       _D)
+       (tyarrowe_ (tychar_) (tyfloatc_ _A) _A _D)
+      _A _D)
   with tyarrow_ tyfloat_ (tyarrow_ tychar_ tyfloat_) using eqType
 in
 
@@ -1508,7 +1579,7 @@ utest leqcType _P (tyfloatc_ _A) with true in
 let rhs = tytuple_ [
   tyfloatc_ _P,
   tyseq_ (tyfloatc_ _M),
-  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _D
+  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _A _D
 ] in
 utest leqcType _A rhs with false in
 utest leqcType _P rhs with false in
@@ -1524,7 +1595,7 @@ utest eqcType _P (tyfloatc_ _A) with false in
 let rhs = tytuple_ [
   tyfloatc_ _P,
   tyseq_ (tyfloatc_ _M),
-  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _D
+  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _A _D
 ] in
 utest eqcType _A rhs with false in
 utest eqcType _P rhs with false in
@@ -1542,7 +1613,7 @@ utest eqcType _M (rhs _P) with false in
 let rhs = tytuple_ [
   tyfloatc_ _M,
   tyseq_ (tyfloatc_ _M),
-  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _D
+  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _M _D
 ] in
 utest eqcType _A rhs with false in
 utest eqcType _P rhs with false in
@@ -1558,7 +1629,7 @@ utest leqTypec (tyfloatc_ _A) _P with false in
 let rhs = tytuple_ [
   tyfloatc_ _P,
   tyseq_ (tyfloatc_ _M),
-  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _D
+  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _P _D
 ] in
 utest leqTypec rhs _A with true in
 utest leqTypec rhs _P with true in
@@ -1576,7 +1647,7 @@ utest dtcLeqcEnv _P env with false in
 utest dtcLeqcEnv _M env with true in
 utest
   dtcLeqcEnv _M
-    (dtcEnvOfSeq [(_x, (tyarrowe_ (tychar_) (tyfloatc_ _A) _D))])
+    (dtcEnvOfSeq [(_x, (tyarrowe_ (tychar_) (tyfloatc_ _A) _A _D))])
   with true
 in
 
@@ -1587,8 +1658,8 @@ in
 utest mulcType _A (tyfloatc_ _A) with tyfloatc_ _A using eqType in
 utest mulcType _A (tyfloatc_ _P) with tyfloatc_ _P using eqType in
 utest mulcType _P (tyfloatc_ _A) with tyfloatc_ _P using eqType in
-utest mulcType _M (tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _D) with
-  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _D using eqType
+utest mulcType _M (tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _A _D) with
+  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _M _D using eqType
 in
 utest mulcType _P (tytuple_ [tyfloatc_ _A, tyfloatc_ _M]) with
   tytuple_ [tyfloatc_ _P, tyfloatc_ _M] using eqType
@@ -1645,7 +1716,7 @@ utest subtype (tup2 _A _A, tup2 _A _P) with false in
 
 -- Arrows
 let arr = lam c1. lam c2. lam e.
-  tyarrowe_ (tyfloatc_ c1) (tyfloatc_ c2) e
+  tyarrowe_ (tyfloatc_ c1) (tyfloatc_ c2) _A e
 in
 
 utest subtype (arr _A _A _D, arr _A _A _D) with true in
@@ -1654,6 +1725,20 @@ utest subtype (arr _A _A _R, arr _A _A _R) with true in
 utest subtype (arr _A _A _R, arr _A _A _D) with false in
 utest subtype (arr _A _P _D, arr _A _A _D) with true in
 utest subtype (arr _A _A _D, arr _P _A _D) with true in
+
+let arr = lam c.
+  tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) c _D
+in
+
+utest subtype (arr _A, arr _A) with true in
+utest subtype (arr _P, arr _A) with true in
+utest subtype (arr _M, arr _A) with true in
+utest subtype (arr _A, arr _P) with false in
+utest subtype (arr _P, arr _P) with true in
+utest subtype (arr _M, arr _P) with true in
+utest subtype (arr _A, arr _M) with false in
+utest subtype (arr _P, arr _M) with false in
+utest subtype (arr _M, arr _M) with true in
 
 -- Type variables
 utest subtype (tyvar_ "X", tyvar_ "X") with true in
@@ -1735,7 +1820,7 @@ utest meetType (tup2 _P _M, tup2 _A _P) with Some (tup2 _P _M) using eq in
 utest meetType (tup2 _A _A, tup2 _A _P) with Some (tup2 _A _P) using eq in
 
 -- Arrows
-let arr = tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) in
+let arr = tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _A in
 let _joinType = lam e1. lam e2. joinType (arr e1, arr e2) in
 
 utest _joinType _D _D with Some (arr _D) using eq in
@@ -1750,7 +1835,7 @@ utest _meetType _D _R with Some (arr _D) using eq in
 utest _meetType _R _D with Some (arr _D) using eq in
 utest _meetType _R _R with Some (arr _R) using eq in
 
-let arr = lam c. tyarrowe_ (tyfloatc_ c) (tyfloatc_ _A) _D in
+let arr = lam c. tyarrowe_ (tyfloatc_ c) (tyfloatc_ _A) _A _D in
 let _joinType = lam c1. lam c2. joinType (arr c1, arr c2) in
 
 utest _joinType _A _P with Some (arr _P) using eq in
@@ -1773,7 +1858,7 @@ utest _meetType _M _P with Some (arr _P) using eq in
 utest _meetType _P _P with Some (arr _P) using eq in
 utest _meetType _M _M with Some (arr _M) using eq in
 
-let arr = lam c. tyarrowe_ (tyfloatc_ _A) (tyfloatc_ c) _D in
+let arr = lam c. tyarrowe_ (tyfloatc_ _A) (tyfloatc_ c) _A _D in
 let _joinType = lam c1. lam c2. joinType (arr c1, arr c2) in
 
 utest _joinType _A _P with Some (arr _A) using eq in
@@ -1794,6 +1879,31 @@ utest _meetType _M _A with Some (arr _M) using eq in
 utest _meetType _P _M with Some (arr _M) using eq in
 utest _meetType _M _P with Some (arr _M) using eq in
 utest _meetType _P _P with Some (arr _P) using eq in
+utest _meetType _M _M with Some (arr _M) using eq in
+
+let arr = lam c. tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) c _D in
+let _joinType = lam c1. lam c2. joinType (arr c1, arr c2) in
+
+utest _joinType _A _A with Some (arr _A) using eq in
+utest _joinType _A _P with Some (arr _A) using eq in
+utest _joinType _P _A with Some (arr _A) using eq in
+utest _joinType _A _M with Some (arr _A) using eq in
+utest _joinType _M _A with Some (arr _A) using eq in
+utest _joinType _P _P with Some (arr _P) using eq in
+utest _joinType _P _M with Some (arr _P) using eq in
+utest _joinType _M _P with Some (arr _P) using eq in
+utest _joinType _M _M with Some (arr _M) using eq in
+
+let _meetType = lam c1. lam c2. meetType (arr c1, arr c2) in
+
+utest _meetType _A _A with Some (arr _A) using eq in
+utest _meetType _A _P with Some (arr _P) using eq in
+utest _meetType _P _A with Some (arr _P) using eq in
+utest _meetType _A _M with Some (arr _M) using eq in
+utest _meetType _M _A with Some (arr _M) using eq in
+utest _meetType _P _P with Some (arr _P) using eq in
+utest _meetType _P _M with Some (arr _M) using eq in
+utest _meetType _M _P with Some (arr _M) using eq in
 utest _meetType _M _M with Some (arr _M) using eq in
 
 -- Type variables
@@ -1850,7 +1960,7 @@ utest _mincType _M _M with _M in
 
 -- Arrows
 let _mincType = lam c1. lam c2.
-  mincType (tyarrowe_ (tyfloatc_ c1) (tyfloatc_ c2) (D ()))
+  mincType (tyarrowe_ (tyfloatc_ c1) (tyfloatc_ c2) _A _D)
 in
 
 utest _mincType _A _A with _A in
@@ -1890,7 +2000,7 @@ let genEnv = lam.
     (_x, tyfloatc_ (genC ())),
     (_y, tyfloatc_ (genC ())),
     (_z, tyfloatc_ (genC ())),
-    (_f, tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) _D),
+    (_f, tyarrowe_ (tyfloatc_ _A) (tyfloatc_ _A) (genC ()) _D),
     (_g, tydist_ (tyfloatc_ _A))
   ]
 in
@@ -1950,9 +2060,18 @@ let eq =
     (tupleEq2 dtcEqe eqType)
 in
 
+let toString =
+  eitherEither
+    (lam errs. strJoin "\n" (map typeErrorToString errs))
+    (lam t. join [":", dtcEffectToString t.0, " ", type2str t.1])
+in
+let onFail = utestDefaultToString toString toString in
+
 -- Shorthand types
-let arr = lam ps. lam ret. foldr (lam t. lam to. tyarrowe_ t.0 to t.1) ret ps in
-let arrd = lam ps. arr (map (lam _P. (_P, _D)) ps) in
+let arrce = lam ps. lam ret. foldr (lam t. lam to. tyarrowe_ t.0 to t.1 t.2) ret ps in
+let arr = lam ps. arrce (map (lam p. (p, _A, _D)) ps) in
+let arrc = lam ps. arrce (map (lam p. (p.0, p.1, _D)) ps) in
+let arre = lam ps. arrce (map (lam p. (p.0, _A, p.1)) ps) in
 let flt = tyfloatc_ in
 
 -- Shorthand terms
@@ -1968,89 +2087,95 @@ let v = nvar_ _v in
 
 -- Basic tests
 utest _typeOf [] (lam_ [(_x, tyint_)] x)
-  with Right (_D, arr [(tyint_, _D)] tyint_)
-  using eq
+  with Right (_D, arrc [(tyint_, _M)] tyint_)
+  using eq else onFail
 in
 
 utest _typeOf [(_x, tyint_)] (app_ x x)
   with Left [DTCArrowError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [(_x, tyint_)] (bind_ (nulet_ _y x) y)
   with Right (_D, tyint_)
-  using eq
+  using eq else onFail
 in
 
 -- Test effect propagation
-utest _typeOf [(_f, arr [(tyint_, _R)] tyint_), (_x, tyint_)] (f [x])
+utest _typeOf [(_f, arrce [(tyint_, _A, _R)] tyint_), (_x, tyint_)] (f [x])
   with Right (_R, tyint_)
-  using eq
+  using eq else onFail
 in
 
 -- Test subtyping and promotion
-utest _typeOf [(_f, arrd [flt _A] (flt _A)), (_x, flt _A)] (f [x])
+utest _typeOf [(_f, arr [flt _A] (flt _A)), (_x, flt _A)] (f [x])
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
-utest _typeOf [(_f, arrd [flt _A] (flt _A)), (_x, flt _P)] (f [x])
+utest _typeOf [(_f, arr [flt _A] (flt _A)), (_x, flt _P)] (f [x])
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
-utest _typeOf [(_f, arrd [flt _A] tyint_), (_x, tyint_)] (f [x])
+utest _typeOf [(_f, arr [flt _A] tyint_), (_x, tyint_)] (f [x])
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 let env = [
-  (_f, arrd [flt _A, flt _A] (flt _A)),
-  (_g, arrd [flt _P, flt _P] (flt _P)),
+  (_f, arrc [(flt _A, _P), (flt _A, _A)] (flt _A)),
+  (_g, arrc [(flt _P, _A), (flt _P, _A)] (flt _P)),
   (_x, flt _P),
   (_y, flt _A)
 ] in
 
 utest
+  _typeOf env  (f [f [x, x], x])
+  with Right (_D, flt _P)
+  using eq else onFail
+in
+
+utest
   _typeOf env  (f [g [f [x, x], x], y])
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf env (f [g [f [x, x], y], y])
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf env (f [g [f [x, y], x], y])
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf [] (addf_ (float_ 1.) (float_ 1.))
-  with Right (_D, flt _A)
-  using eq
+  with Right (_D, flt _M)
+  using eq else onFail
 in
 
 let env = [
-  (_f, arrd [flt _A] (flt _A)),
-  (_g, arrd [flt _M] (flt _M))
+  (_f, arrc [(flt _A, _M)] (flt _A)),
+  (_g, arr [flt _M] (flt _M))
 ] in
 
 utest
   _typeOf env
     (app_
-       (lam_ [(_h, arrd [flt _A] (flt _M))] (lam_ [(_y, flt _A)] (g [h [y]])))
+       (lam_ [(_h, arr [flt _A] (flt _M))] (lam_ [(_y, flt _A)] (g [h [y]])))
        (lam_ [(_x, flt _A)] (f [float_ 1.])))
-  with Right (_D, arrd [flt _A] (flt _M))
-  using eq
+  with Right (_D, arr [flt _A] (flt _M))
+  using eq else onFail
 in
 
 let env = [
-  (_f, arrd [flt _M, flt _M] (flt _M)),
+  (_f, arr [flt _M, flt _M] (flt _M)),
   (_x, flt _M),
   (_y, flt _A)
 ] in
@@ -2058,11 +2183,11 @@ let env = [
 utest
   _typeOf env (addf_ (f [addf_ x (float_ 1.), x]) y)
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
 let env = [
-  (_f, arrd [flt _M, flt _M] (flt _M)),
+  (_f, arr [flt _M, flt _M] (flt _M)),
   (_x, flt _P),
   (_y, flt _A)
 ] in
@@ -2070,7 +2195,7 @@ let env = [
 utest
   _typeOf env (addf_ (f [addf_ x (float_ 1.), x]) y)
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 -- Test sequence
@@ -2078,30 +2203,30 @@ in
 utest
   _typeOf [] (seq_ [])
   with Right (_D, tyseq_ (TyBot { info = NoInfo () }))
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf [(_x, flt _A)] (seq_ [x])
   with Right (_D, tyseq_ (flt _A))
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf [(_x, flt _A), (_y, flt _P)] (seq_ [x, y])
   with Right (_D, tyseq_ (flt _A))
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf [
-    (_f, arr [(flt _A, _R)] (flt _A)),
-    (_g, arr [(flt _A, _D)] (flt _A)),
+    (_f, arre [(flt _A, _R)] (flt _A)),
+    (_g, arre [(flt _A, _D)] (flt _A)),
     (_x, flt _P),
     (_y, flt _M)
   ] (seq_ [f [x], g [y]])
-  with Right (_R, tyseq_ (flt _P))
-  using eq
+  with Right (_R, tyseq_ (flt _A))
+  using eq else onFail
 in
 
 -- Test records
@@ -2109,29 +2234,29 @@ in
 utest
   _typeOf [] (utuple_ [])
   with Right (_D, tytuple_ [])
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf [(_x, flt _A), (_y, flt _P)] (utuple_ [x, y])
   with Right (_D, tytuple_ [flt _A, flt _P])
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf [
-    (_f, arr [(flt _A, _R)] (flt _A)),
-    (_g, arr [(flt _A, _D)] (flt _A)),
+    (_f, arrce [(flt _A, _P,  _R)] (flt _A)),
+    (_g, arrce [(flt _A, _M, _D)] (flt _A)),
     (_x, flt _P),
     (_y, flt _M)
   ] (utuple_ [f [x], g [y]])
   with Right (_R, tytuple_ [flt _P, flt _M])
-  using eq
+  using eq else onFail
 in
 
 -- Test never
 
-utest _typeOf [] never_ with Right (_D, tybot_) using eq in
+utest _typeOf [] never_ with Right (_D, tybot_) using eq else onFail in
 
 -- Test match
 
@@ -2142,26 +2267,26 @@ let env = [
 utest
   _typeOf env (match_ x (npvar_ _y) y x)
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf env (match_ x (npvar_ _y) y (float_ 1.))
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
 let env = [
-  (_f, arrd [flt _P, flt _P] (flt _A)),
-  (_g, arr [(flt _A, _R), (flt _M, _D)] (flt _P))
+  (_f, arrce [(flt _P, _M, _D), (flt _P, _P, _D)] (flt _A)),
+  (_g, arrce [(flt _A, _P, _R), (flt _M, _A, _D)] (flt _P))
 ] in
 
 utest
   let f = nvar_ _f in
   let g = nvar_ _g in
   _typeOf env (match_ f pvarw_ f g)
-  with Right (_D, arr [(flt _P, _R), (flt _M, _D)] (flt _A))
-  using eq
+  with Right (_D, arrce [(flt _P, _P, _R), (flt _M, _A, _D)] (flt _A))
+  using eq else onFail
 in
 
 let env = [
@@ -2171,7 +2296,7 @@ let env = [
 utest
   _typeOf env (match_ x (pseqtot_ [npvar_ _y, npvar_ _z]) (seq_ [z, y]) x)
   with Right (_D, tyseq_ (flt _A))
-  using eq
+  using eq else onFail
 in
 
 utest
@@ -2179,7 +2304,7 @@ utest
     (match_ x (pseqedgen_ [npvar_ _y] _z [npvar_ _u])
        (concat_ z (seq_ [y, u])) x)
   with Right (_D, tyseq_ (flt _A))
-  using eq
+  using eq else onFail
 in
 
 let env = [
@@ -2189,61 +2314,61 @@ let env = [
 utest
   _typeOf env (tupleproj_ 0 x)
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf env (tupleproj_ 1 x)
   with Right (_D, flt _P)
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf env (tupleproj_ 2 x)
   with Right (_D, flt _M)
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf env (tupleproj_ 3 x)
   with Left [DTCPatError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf [(_x, tyint_)] (match_ x (pint_ 0) x x)
   with Right (_D, tyint_)
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf [(_x, tychar_)] (match_ x (pchar_ '0') x x)
   with Right (_D, tychar_)
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf [(_x, tybool_)] (match_ x ptrue_ x x)
   with Right (_D, tybool_)
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf [(_x, tychar_)] (match_ x (pint_ 0) x x)
   with Left [DTCPatError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf [(_x, tybool_)] (match_ x (pchar_ '0') x x)
   with Left [DTCPatError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf [(_x, tyint_)] (match_ x ptrue_ x x)
   with Left [DTCPatError (None ())]
-  using eq
+  using eq else onFail
 in
 
 let env = [
@@ -2259,177 +2384,177 @@ in
 
 utest _typeOf env (_tm pand_)
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf env (_tm por_)
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
 let _tm = match_ x (pnot_ (pint_ 0)) x x in
 
 utest _typeOf [(_x, tyint_)] _tm
   with Right (_D, tyint_)
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [(_x, flt _A)] _tm
   with Left [DTCPatError (None ())]
-  using eq
+  using eq else onFail
 in
 
 -- Infer
 
-let env = [(_f, arrd [tyunit_] (flt _A))] in
+let env = [(_f, arrc [(tyunit_, _M)] (flt _A))] in
 let infer__ = infer_ (Default { runs = int_ 1 }) in
 
 utest _typeOf env (infer__ (nvar_ _f))
   with Right (_D, tydist_ (flt _A))
-  using eq
+  using eq else onFail
 in
 
-utest _typeOf [(_f, arrd [flt _A] (flt _A))] (infer__ (nvar_ _f))
+utest _typeOf [(_f, arrc [(flt _A, _M)] (flt _A))] (infer__ (nvar_ _f))
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 let infer__ = infer_ (Default { runs = never_ }) in
 
 utest _typeOf env (infer__ (nvar_ _f))
   with Right (_D, tydist_ (flt _A))
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf
-    (concat env [(_x, arrd [flt _M] tyint_), (_y, flt _A)])
+    (concat env [(_x, arr [flt _M] tyint_), (_y, flt _A)])
     (infer_ (Default { runs = app_ x y }) (nvar_ _f))
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf
-    (concat env [(_x, arr [(flt _A, _R)] tyint_), (_y, flt _A)])
+    (concat env [(_x, arre [(flt _A, _R)] tyint_), (_y, flt _A)])
     (infer_ (Default { runs = app_ x y }) (nvar_ _f))
   with Right (_R, tydist_ (flt _A))
-  using eq
+  using eq else onFail
 in
 
 -- Assume
 
 utest _typeOf [(_x, tydist_ (flt _A))] (assume_ x)
   with Right (_R, flt _M)
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [(_x, flt _A)] (assume_ x)
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 -- Observe
 
 utest _typeOf [(_x, tydist_ (flt _A))] (observe_ (float_ 0.) x)
   with Right (_D, tyunit_)
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [(_x, tydist_ (flt _A))] (observe_ (int_ 0) x)
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [(_x, flt _A)] (observe_ (float_ 0.) x)
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 -- Weight
 
 utest _typeOf [(_x, flt _A)] (weight_ x)
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [(_x, flt _P)] (weight_ x)
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [(_x, flt _M)] (weight_ x)
   with Right (_R, tyunit_)
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [] (weight_ (int_ 0))
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 -- Dist
 
 utest _typeOf [(_x, flt _M), (_y, flt _M)] (dist_ (DUniform {a = x, b = y}))
   with Right (_D, tydist_ (flt _M))
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [(_x, flt _M)] (dist_ (DBernoulli {p = x}))
   with Right (_D, tydist_ tybool_)
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [(_x, flt _M)] (dist_ (DPoisson {lambda = x}))
   with Right (_D, tydist_ tyint_)
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [(_x, flt _M), (_y, flt _M)] (dist_ (DBeta {a = x, b = y}))
   with Right (_D, tydist_ (flt _M))
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [(_x, flt _M), (_y, flt _M)] (dist_ (DGamma {k = x, theta = y}))
   with Right (_D, tydist_ (flt _M))
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [(_x, tyseq_ (flt _M))] (dist_ (DCategorical {p = x}))
   with Right (_D, tydist_ tyint_)
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [(_x, tyint_), (_y, tyseq_ (flt _M))]
         (dist_ (DMultinomial {n = x, p = y}))
   with Right (_D, tydist_ (tyseq_ tyint_))
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [(_x, flt _M)] (dist_ (DExponential {rate = x}))
   with Right (_D, tydist_ (flt _M))
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [(_x, flt _M), (_y, flt _M)] (dist_ (DGaussian {mu = x, sigma = y}))
   with Right (_D, tydist_ (flt _M))
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [] (dist_ (DWiener { cps = false, a = unit_ }))
-  with Right (_D, tydist_ (arrd [flt _M] (flt _M)))
-  using eq
+  with Right (_D, tydist_ (arr [flt _M] (flt _M)))
+  using eq else onFail
 in
 
 utest _typeOf [(_x, flt _M)] (dist_ (DExponential {rate = x}))
   with Right (_D, tydist_ (flt _M))
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [(_x, (tyseq_ (tytuple_ [flt _M, flt _M])))]
         (dist_ (DEmpirical {samples = x}))
   with Left [DTCPolyDistError (None ())]
-  using eq
+  using eq else onFail
 in
 
 let _test = lam c.
@@ -2438,18 +2563,18 @@ in
 
 utest _test _A
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest _test _P
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 -- Diff
 
 let _test = lam mod. lam c1. lam c2. lam c3. lam c4. lam e. _typeOf [
-  (_x, tyarrowe_ (flt c1) (flt c2) e),
+  (_x, arre [(flt c1, e)] (flt c2)),
   (_y, flt c3),
   (_z, flt c4)
 ] (TmDiff {
@@ -2464,122 +2589,122 @@ let _test = lam mod. lam c1. lam c2. lam c3. lam c4. lam e. _typeOf [
 utest
   _test (Analytic ()) _A _A _A _A _D
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
 utest
   _test (Analytic ()) _A _A _P _P _D
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
 utest
   _test (Analytic ()) _A _A _M _M _D
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
 utest
   _test (Analytic ()) _A _P _A _A _D
   with Right (_D, flt _P)
-  using eq
+  using eq else onFail
 in
 
 utest
   _test (Analytic ()) _A _M _A _A _D
   with Right (_D, flt _M)
-  using eq
+  using eq else onFail
 in
 
 utest
   _test (Analytic ()) _P _A _A _A _D
   with Left [DTCDiffFnError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _test (Analytic ()) _M _A _A _A _D
   with Left [DTCDiffFnError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _test (Analytic ()) _A _A _A _A _R
   with Left [DTCDiffFnError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _test (PAP ()) _A _A _A _A _D
   with Left [DTCDiffFnError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _test (PAP ()) _P _A _A _A _D
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _test (PAP ()) _P _A _P _A _D
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
 utest
   _test (PAP ()) _P _A _M _A _D
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
 utest
   _test (PAP ()) _M _A _P _A _D
   with Left [DTCDiffFnError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _test (PAP ()) _M _A _M _A _D
   with Left [DTCDiffFnError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf [
-    (_x, tyarrowe_ (tyseq_ (tytuple_ [flt _A, tyint_])) (flt _A) _D),
+    (_x, arr [tyseq_ (tytuple_ [flt _A, tyint_])] (flt _A)),
     (_y, (tyseq_ (tytuple_ [flt _A, tyint_]))),
     (_z, (tyseq_ (tytuple_ [flt _A, tyint_])))
   ] (diffp_ x y z)
   with Left [DTCDiffFnError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf [
-    (_x, tyarrowe_ (flt _A) (tyseq_ (tytuple_ [flt _A, tyint_])) _D),
+    (_x, arr [flt _A] (tyseq_ (tytuple_ [flt _A, tyint_]))),
     (_y, (flt _A)),
     (_z, (flt _A))
   ] (diffp_ x y z)
   with Left [DTCDiffFnError (None ())]
-  using eq
+  using eq else onFail
 in
 
 -- Solve
 
 utest
   _typeOf [
-    (_x, arrd [flt _A, tytuple_ [flt _A, flt _A]] (tytuple_ [flt _A, flt _A])),
+    (_x, arr [flt _A, tytuple_ [flt _A, flt _A]] (tytuple_ [flt _A, flt _A])),
     (_y, tytuple_ [flt _A, flt _A]),
     (_z, flt _P)
   ] (solveode_ x y z)
   with Right (_D, tytuple_ [flt _A, flt _A])
-  using eq
+  using eq else onFail
 in
 
 let _test = lam c.
   _typeOf [
-    (_x, arrd [flt _A, flt _P] (flt c)),
+    (_x, arr [flt _A, flt _P] (flt c)),
     (_y, flt c),
     (_z, flt _P)
   ] (solveode_ x y z)
@@ -2588,24 +2713,24 @@ in
 utest
   _test _A
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _test _P
   with Right (_D, flt _P)
-  using eq
+  using eq else onFail
 in
 
 utest
   _test _M
   with Right (_D, flt _M)
-  using eq
+  using eq else onFail
 in
 
 let _test = lam c.
   _typeOf [
-    (_x, arrd [flt _A, flt _A] (flt _A)),
+    (_x, arr [flt _A, flt _A] (flt _A)),
     (_y, flt _A),
     (_z, flt c)
   ] (solveode_ x y z)
@@ -2614,24 +2739,24 @@ in
 utest
   _test _A
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _test _P
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
 utest
   _test _M
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
 let _test = lam c.
   _typeOf [
-    (_x, arrd [flt _A, flt _P] (flt _P)),
+    (_x, arr [flt _A, flt _P] (flt _P)),
     (_y, flt c),
     (_z, flt _P)
   ] (solveode_ x y z)
@@ -2640,19 +2765,19 @@ in
 utest
   _test _A
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _test _P
   with Right (_D, flt _P)
-  using eq
+  using eq else onFail
 in
 
 utest
   _test _M
   with Right (_D, flt _P)
-  using eq
+  using eq else onFail
 in
 
 -- NOTE(oerikss, 2024-10-23): This would otherwise allow us to construct
@@ -2661,34 +2786,34 @@ in
 -- `id t` coerces any term `t : FloatA` to `FloatN`.
 utest
   _typeOf [
-    (_x, arrd [flt _A, flt _A] (flt _M)),
+    (_x, arr [flt _A, flt _A] (flt _M)),
     (_y, flt _A),
     (_z, flt _P)
   ] (solveode_ x y z)
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 let env =  [
-  (_x, arrd [flt _A, flt _P] (flt _P)),
+  (_x, arr [flt _A, flt _P] (flt _P)),
   (_y, flt _P),
   (_z, flt _P)
 ] in
 
 utest
   _typeOf
-    (concat env [(_u, arrd [flt _M] (flt _M)), (_v, flt _A)])
+    (concat env [(_u, arr [flt _M] (flt _M)), (_v, flt _A)])
     (solveodeWithStepSize_ (app_ u v) x y z)
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf
-    (concat env [(_u, arr [(flt _A, _R)] (flt _M)), (_v, flt _A)])
+    (concat env [(_u, arre [(flt _A, _R)] (flt _M)), (_v, flt _A)])
     (solveodeWithStepSize_ (app_ u v) x y z)
   with Right (_R, flt _P)
-  using eq
+  using eq else onFail
 in
 
 -- Sequence operations
@@ -2697,40 +2822,40 @@ utest
   _typeOf [
     (_x, tyseq_ (flt _A))
   ] (app_ (uconst_ (CSet ())) x)
-  with Right (_D, arrd [tyint_, flt _A] (tyseq_ (flt _A)))
-  using eq
+  with Right (_D, arr [tyint_, flt _A] (tyseq_ (flt _A)))
+  using eq else onFail
 in
 
 utest
   _typeOf [
     (_x, tyseq_ (flt _A))
   ] (app_ (uconst_ (CGet ())) x)
-  with Right (_D, arrd [tyint_] (flt _A))
-  using eq
+  with Right (_D, arr [tyint_] (flt _A))
+  using eq else onFail
 in
 
 utest
   _typeOf [
     (_x, flt _A)
   ] (app_ (uconst_ (CCons ())) x)
-  with Right (_D, arrd [tyseq_ (flt _A)] (tyseq_ (flt _A)))
-  using eq
+  with Right (_D, arr [tyseq_ (flt _A)] (tyseq_ (flt _A)))
+  using eq else onFail
 in
 
 utest
   _typeOf [
     (_x, tyseq_ (flt _A))
   ] (app_ (uconst_ (CSnoc ())) x)
-  with Right (_D, arrd [(flt _A)] (tyseq_ (flt _A)))
-  using eq
+  with Right (_D, arr [(flt _A)] (tyseq_ (flt _A)))
+  using eq else onFail
 in
 
 utest
   _typeOf [
     (_x, tyseq_ (flt _A))
   ] (app_ (uconst_ (CConcat ())) x)
-  with Right (_D, arrd [tyseq_ (flt _A)] (tyseq_ (flt _A)))
-  using eq
+  with Right (_D, arr [tyseq_ (flt _A)] (tyseq_ (flt _A)))
+  using eq else onFail
 in
 
 utest
@@ -2738,7 +2863,7 @@ utest
     (_x, tyseq_ (flt _A))
   ] (app_ (uconst_ (CLength ())) x)
   with Right (_D, tyint_)
-  using eq
+  using eq else onFail
 in
 
 utest
@@ -2746,7 +2871,7 @@ utest
     (_x, tyseq_ (flt _A))
   ] (app_ (uconst_ (CReverse ())) x)
   with Right (_D, tyseq_ (flt _A))
-  using eq
+  using eq else onFail
 in
 
 utest
@@ -2754,7 +2879,7 @@ utest
     (_x, tyseq_ (flt _A))
   ] (app_ (uconst_ (CHead ())) x)
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
 utest
@@ -2762,7 +2887,7 @@ utest
     (_x, tyseq_ (flt _A))
   ] (app_ (uconst_ (CTail ())) x)
   with Right (_D, tyseq_ (flt _A))
-  using eq
+  using eq else onFail
 in
 
 let _test = lam c.
@@ -2772,106 +2897,106 @@ let _test = lam c.
 in
 
 iter
-  (lam c. utest _test c with Right (_D, tybool_) using eq in ())
+  (lam c. utest _test c with Right (_D, tybool_) using eq else onFail in ())
   [CNull (), CIsList (), CIsRope ()];
 
 let _test = lam e.
   _typeOf [
-    (_x, tyarrowe_ (flt _A) (flt _P) e)
+    (_x, arre [(flt _A, e)] (flt _P))
   ] (app_ (uconst_ (CMap ())) x)
 in
 
 let _expected = lam e.
-  Right (_D, tyarrowe_ (tyseq_ (flt _A)) (tyseq_ (flt _P)) e)
+  Right (_D, arre [(tyseq_ (flt _A), e)] (tyseq_ (flt _P)))
 in
 
-utest _test _D with _expected _D using eq in
-utest _test _R with _expected _R using eq in
+utest _test _D with _expected _D using eq else onFail in
+utest _test _R with _expected _R using eq else onFail in
 
 let _test = lam e1. lam e2.
   _typeOf [
-    (_x, arr [(tyint_, e1), (flt _A, e2)] (flt _P))
+    (_x, arre [(tyint_, e1), (flt _A, e2)] (flt _P))
   ] (app_ (uconst_ (CMapi ())) x)
 in
 
 let _expected = lam e.
-  Right (_D, tyarrowe_ (tyseq_ (flt _A)) (tyseq_ (flt _P)) e)
+  Right (_D, arre [(tyseq_ (flt _A), e)] (tyseq_ (flt _P)))
 in
 
-utest _test _D _D with _expected _D using eq in
-utest _test _R _D with _expected _R using eq in
-utest _test _D _R with _expected _R using eq in
-utest _test _R _R with _expected _R using eq in
+utest _test _D _D with _expected _D using eq else onFail in
+utest _test _R _D with _expected _R using eq else onFail in
+utest _test _D _R with _expected _R using eq else onFail in
+utest _test _R _R with _expected _R using eq else onFail in
 
 let _test = lam e.
   _typeOf [
-    (_x, tyarrowe_ (flt _A) tyunit_ e)
+    (_x, arre [(flt _A, e)] tyunit_)
   ] (app_ (uconst_ (CIter ())) x)
 in
 
 let _expected = lam e.
-  Right (_D, tyarrowe_ (tyseq_ (flt _A)) tyunit_ e)
+  Right (_D, arre [(tyseq_ (flt _A), e)] tyunit_)
 in
 
-utest _test _D with _expected _D using eq in
-utest _test _R with _expected _R using eq in
+utest _test _D with _expected _D using eq else onFail in
+utest _test _R with _expected _R using eq else onFail in
 
 let _test = lam e1. lam e2.
   _typeOf [
-    (_x, arr [(tyint_, e1), (flt _A, e2)] tyunit_)
+    (_x, arre [(tyint_, e1), (flt _A, e2)] tyunit_)
   ] (app_ (uconst_ (CIteri ())) x)
 in
 
 let _expected = lam e.
-  Right (_D, tyarrowe_ (tyseq_ (flt _A)) tyunit_ e)
+  Right (_D, arre [(tyseq_ (flt _A), e)] tyunit_)
 in
 
-utest _test _D _D with _expected _D using eq in
-utest _test _R _D with _expected _R using eq in
-utest _test _D _R with _expected _R using eq in
-utest _test _R _R with _expected _R using eq in
+utest _test _D _D with _expected _D using eq else onFail in
+utest _test _R _D with _expected _R using eq else onFail in
+utest _test _D _R with _expected _R using eq else onFail in
+utest _test _R _R with _expected _R using eq else onFail in
 
 let _test = lam e1. lam e2.
   _typeOf [
-    (_x, arr [(tyint_, e1), (flt _A, e2)] tyint_)
+    (_x, arre [(tyint_, e1), (flt _A, e2)] tyint_)
   ] (app_ (uconst_ (CFoldl ())) x)
 in
 
 let _expected = lam e.
-  Right (_D, arr [(tyint_, _D), (tyseq_ (flt _A), e)] (tyint_))
+  Right (_D, arre [(tyint_, _D), (tyseq_ (flt _A), e)] (tyint_))
 in
 
-utest _test _D _D with _expected _D using eq in
-utest _test _R _D with _expected _R using eq in
-utest _test _D _R with _expected _R using eq in
-utest _test _R _R with _expected _R using eq in
+utest _test _D _D with _expected _D using eq else onFail in
+utest _test _R _D with _expected _R using eq else onFail in
+utest _test _D _R with _expected _R using eq else onFail in
+utest _test _R _R with _expected _R using eq else onFail in
 
 let _test = lam e1. lam e2.
   _typeOf [
-    (_x, arr [(flt _A, e2), (tyint_, e1)] tyint_)
+    (_x, arre [(flt _A, e2), (tyint_, e1)] tyint_)
   ] (app_ (uconst_ (CFoldr ())) x)
 in
 
 let _expected = lam e.
-  Right (_D, arr [(tyint_, _D), (tyseq_ (flt _A), e)] (tyint_))
+  Right (_D, arre [(tyint_, _D), (tyseq_ (flt _A), e)] (tyint_))
 in
 
-utest _test _D _D with _expected _D using eq in
-utest _test _R _D with _expected _R using eq in
-utest _test _D _R with _expected _R using eq in
-utest _test _R _R with _expected _R using eq in
+utest _test _D _D with _expected _D using eq else onFail in
+utest _test _R _D with _expected _R using eq else onFail in
+utest _test _D _R with _expected _R using eq else onFail in
+utest _test _R _R with _expected _R using eq else onFail in
 
 iter
   (lam c.
     let _test = lam e.
       _typeOf [
         (_x, tyint_),
-        (_y, arr [(tyint_, e)] (flt _A))
+        (_y, arre [(tyint_, e)] (flt _A))
      ] (appf2_ (uconst_ c) x y)
     in
     let _expected = lam e. Right (e, tyseq_ (flt _A)) in
-    utest _test _D with _expected _D using eq in
-    utest _test _R with _expected _R using eq in
+    utest _test _D with _expected _D using eq else onFail in
+    utest _test _R with _expected _R using eq else onFail in
     ())
   [CCreate (), CCreateList (), CCreateRope ()];
 
@@ -2879,16 +3004,16 @@ utest
   _typeOf [
     (_x, tyseq_ (flt _A))
   ] (app_ (uconst_ (CSplitAt ())) x)
-  with Right (_D, arrd [tyint_] (tytuple_ [tyseq_ (flt _A), tyseq_ (flt _A)]))
-  using eq
+  with Right (_D, arr [tyint_] (tytuple_ [tyseq_ (flt _A), tyseq_ (flt _A)]))
+  using eq else onFail
 in
 
 utest
   _typeOf [
     (_x, tyseq_ (flt _A))
   ] (app_ (uconst_ (CSubsequence ())) x)
-  with Right (_D, arrd [tyint_, tyint_] (tyseq_ (flt _A)))
-  using eq
+  with Right (_D, arr [tyint_, tyint_] (tyseq_ (flt _A)))
+  using eq else onFail
 in
 
 -- Dist Operations
@@ -2898,7 +3023,7 @@ utest
     (_x, tydist_ tyint_)
   ] (app_ (uconst_ (CDistEmpiricalSamples ())) x)
   with Right (_D, tytuple_ [tyseq_ tyint_, tyseq_ (flt _M)])
-  using eq
+  using eq else onFail
 in
 
 utest
@@ -2906,7 +3031,7 @@ utest
     (_x, tydist_ tyint_)
   ] (app_ (uconst_ (CDistEmpiricalDegenerate ())) x)
   with Right (_D, tybool_)
-  using eq
+  using eq else onFail
 in
 
 utest
@@ -2914,7 +3039,7 @@ utest
     (_x, tydist_ tyint_)
   ] (app_ (uconst_ (CDistEmpiricalNormConst ())) x)
   with Right (_D, flt _M)
-  using eq
+  using eq else onFail
 in
 
 utest
@@ -2922,7 +3047,7 @@ utest
     (_x, tydist_ tyint_)
   ] (app_ (uconst_ (CDistEmpiricalAcceptRate ())) x)
   with Right (_D, flt _M)
-  using eq
+  using eq else onFail
 in
 
 utest
@@ -2930,45 +3055,45 @@ utest
     (_x, tydist_ (flt _M))
   ] (app_ (uconst_ (CDistExpectation ())) x)
   with Right (_D, flt _M)
-  using eq
+  using eq else onFail
 in
 
 -- Utest
 
 utest _typeOf [(_x, flt _A), (_y, flt _A), (_z, flt _A)] (bind_ (utest_ x y) z)
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [
   (_x, flt _A),
   (_y, flt _A),
   (_z, flt _A),
-  (_u, arrd [flt _A, flt _A] tybool_)
+  (_u, arr [flt _A, flt _A] tybool_)
 ] (bind_ (utestu_ x y u) z)
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [
   (_x, flt _A),
   (_y, flt _A),
   (_z, flt _A),
-  (_u, arrd [flt _A, flt _A] tybool_),
-  (_v, arrd [flt _A, flt _A] tybool_)
+  (_u, arr [flt _A, flt _A] tybool_),
+  (_v, arr [flt _A, flt _A] tybool_)
 ] (bind_ (utestuo_ x y u v) z)
   with Right (_D, flt _A)
-  using eq
+  using eq else onFail
 in
 
--- ┌──────────┐
--- │ Examples │
--- └──────────┘
+-- ┌───────────────────────┐
+-- │ Modified Old Examples │
+-- └───────────────────────┘
 
 -- Example 1
 
 let env = [
-  (_f, arrd [flt _M] (flt _M))
+  (_f, arrc [(flt _M, _M)] (flt _M))
 ] in
 
 let _tm = lam c.
@@ -2976,46 +3101,46 @@ let _tm = lam c.
     (matchex_ u (ptuple_ [npvar_ _x, npvar_ _y]) (addf_ (f [x]) y))
 in
 
-let _ty = lam c1. lam c2.
-  arrd [tytuple_ [flt _M, flt c1]] (flt c2)
+let _ty = lam c1. lam c2. lam c3.
+  arrc [(tytuple_ [flt _M, flt c1], c3)] (flt c2)
 in
 
 utest _typeOf env (_tm _A)
-  with Right (_D, _ty _A _A)
-  using eq
+  with Right (_D, _ty _A _A _A)
+  using eq else onFail
 in
 
 utest _typeOf env (_tm _P)
-  with Right (_D, (_ty _P _P))
-  using eq
+  with Right (_D, (_ty _P _P _P))
+  using eq else onFail
 in
 
 utest _typeOf env (_tm _M)
-  with Right (_D, (_ty _M _M))
-  using eq
+  with Right (_D, (_ty _M _M _M))
+  using eq else onFail
 in
 
 let _tm = lam c. lam fst. lam snd.
   nlam_ _z (flt c) (app_ (_tm c) (utuple_ [fst, snd]))
 in
 
-let _ty = lam c1. lam c2.
-  arrd [flt c1] (flt c2)
+let _ty = lam c1. lam c2. lam c3.
+  arrc [(flt c1, c2)] (flt c3)
 in
 
 utest _typeOf env (_tm _A (float_ 0.) z)
-  with Right (_D, _ty _A _A)
-  using eq
+  with Right (_D, _ty _A _A _A)
+  using eq else onFail
 in
 
 utest _typeOf env (_tm _M z (float_ 0.))
-  with Right (_D, _ty _M _M)
-  using eq
+  with Right (_D, _ty _M _M _M)
+  using eq else onFail
 in
 
 utest _typeOf env (_tm _A z (float_ 0.))
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 -- Example 2
@@ -3024,17 +3149,17 @@ let _tm = lam c. nlam_ _x (flt c) (if_ (gtf_ x (float_ 0.)) x (negf_ x)) in
 
 utest _typeOf [] (_tm _A)
   with Left [DTCArgError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest _typeOf [] (_tm _P)
-  with Right (_D, arrd [flt _P] (flt _P))
-  using eq
+  with Right (_D, arrc [(flt _P, _P)] (flt _P))
+  using eq else onFail
 in
 
 utest _typeOf [] (_tm _M)
-  with Right (_D, arrd [flt _M] (flt _M))
-  using eq
+  with Right (_D, arrc [(flt _M, _M)] (flt _M))
+  using eq else onFail
 in
 
 -- Example 3
@@ -3044,15 +3169,15 @@ let expectation_ = app_ (uconst_ (CDistExpectation ())) in
 utest
   _typeOf [] (nlam_ _x (flt _P) (expectation_ (infer__ (nlam_ _y tyunit_ x))))
   with Left [DTCContextConstraintError (None ())]
-  using eq
+  using eq else onFail
 in
 
 utest
   _typeOf []
     (nlam_ _x (flt _P)
        (mulf_ x (expectation_ (infer__ (nlam_ _y tyunit_ (float_ 1.))))))
-  with Right (_D, arrd [flt _P] (flt _P))
-  using eq
+  with Right (_D, arrc [(flt _P, _P)] (flt _P))
+  using eq else onFail
 in
 
 ()
