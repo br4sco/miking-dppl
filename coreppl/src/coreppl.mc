@@ -629,14 +629,14 @@ lang SolveODE =
     unify env [infoTm model]
       (arrow float (arrow tyState tyState))
       (tyTm model);
-    unify env [infoTm init] tyState (tyTm init);
+    unify env [infoTm init] (itytuple_ t.info [float, tyState]) (tyTm init);
     unify env [infoTm endTime] float (tyTm endTime);
     TmSolveODE { t with
                  method = method,
                  model = model,
                  init = init,
                  endTime = endTime,
-                 ty = tyState }
+                 ty = itytuple_ t.info [float, tyState] }
 
   -- ANF
   sem normalize (k : Expr -> Expr) =
@@ -1053,7 +1053,6 @@ lang Diff =
   | TmDiff { fn: Expr,
              arg: Expr,
              darg: Expr,
-             mod : Option DiffMod,
              ty: Type,
              info: Info }
 
@@ -1086,15 +1085,12 @@ lang Diff =
     match printParen i env t.fn with (env, fn) in
     match printParen i env t.arg with (env, arg) in
     match printParen i env t.darg with (env, darg) in
-    let mod = switch t.mod
-              case Some (Analytic _) then "A"
-              case Some (PAP _) then "P"
-              case _ then ""
-              end
-    in
-    (env, join [
-      "diff", mod, pprintNewline i,
-      fn, pprintNewline i, arg, pprintNewline i, darg])
+    (env, join [ "diff", pprintNewline i,
+                 fn,
+                 pprintNewline i,
+                 arg,
+                 pprintNewline i,
+                 darg ])
 
   -- Equality
   sem eqExprH (env : EqEnv) (free : EqEnv) (lhs : Expr) =
@@ -1458,18 +1454,13 @@ let solveodeWithStepSize_ =
 
 let solveode_ = solveodeWithStepSize_ (float_ 0.01)
 
-let diffmod_ = use Diff in lam mod. lam fn. lam arg. lam darg. TmDiff {
+let diff_ = use Diff in lam fn. lam arg. lam darg. TmDiff {
   fn = fn,
   arg = arg,
   darg = darg,
-  mod = mod,
   ty = tyunknown_,
   info = NoInfo ()
 }
-
-let diff_ = diffmod_ (None ())
-let diffa_ = use Diff in diffmod_ (Some (Analytic ()))
-let diffp_ = use Diff in diffmod_ (Some (PAP ()))
 
 let prune_ = use Prune in
   lam d. TmPrune {dist = d, ty = tyunknown_ , info = NoInfo ()}

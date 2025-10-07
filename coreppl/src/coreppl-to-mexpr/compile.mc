@@ -505,8 +505,7 @@ lang ODELoader = SolveODE + MCoreLoader + MExprSubstitute
   | EFA _ -> "odeSolverEFASolve"
   | method -> error (join [
     nameGetStr (odeSolverMethodName method),
-    " does not have an implementation in the ODE solver runtime"
-  ])
+    " does not have an implementation in the ODE solver runtime" ])
 
   -- Maps ODE solver method to its method arguments.
   sem odeSolverArgs : ODESolverMethod -> [Expr]
@@ -1067,7 +1066,7 @@ lang CorePPLFileTypeLoader = CPPLLoader + GeneratePprintLoader + MExprGeneratePp
     -- NOTE(oerikss, 2025-03-14): If the user requested it, we type-check with
     -- the DPPL type-checker.
     (if options.dpplTypeCheck then
-      typeOfExn (decorateTypesExn (decorateTerms (symbolize ast))); ()
+      typeOfExn (decorateTypesExn (symbolize ast)); ()
      else ());
 
     recursive let f = lam decls. lam ast.
