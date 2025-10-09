@@ -1,32 +1,57 @@
 include "../lib.mc"
 
-let solve = lam f : FloatN -> FloatA -> FloatA. lam y0 : FloatA. lam x : FloatN.
-  solveode (EF { add = addf, smul = mulf, stepSize = 1e-3 }) f y0 x
+let solve =
+  lam f : FloatC -> FloatA -> FloatA.
+    lam xy0 : (FloatC, FloatA).
+      lam x1 : FloatC.
+        solveode (EFEC {
+          add = addf, smul = mulf, stepSize = 1e-4,
+          ok = lam yh : FloatP. lam y2h2 : FloatP.
+            let err = subf yh y2h2 in ltf (mulf err err) 1e-4 })
+          f xy0 x1
 
-let rode = lam n : Int. lam dx : FloatN. lam t : ().
-  -- Time-steps
-  let xs = create n (lam i : Int. mulf (int2float i) dx) in
+let trace =
+  lam y : (FloatC, FloatA) -> FloatC -> (Float, Float).
+    lam xy0 : (FloatC, FloatA).
+      lam xs : [FloatC].
+        tail
+          (reverse
+             (foldl
+                (lam xys : [(FloatC, FloatA)]. lam x1 : FloatC.
+                  cons (y (head xys) x1) xys)
+                [xy0] xs))
 
+let _h = 0.01
+let _n = 500
+let times = create _n (lam i : Int. mulf _h (int2float (addi i 1)))
+
+let x0 = 0.
+let y0 = 0.
+
+let rode = lam t : ().
   -- Process noise
   let w = assume (Wiener ()) in
 
-  -- RODE model
-  let f = lam x : FloatN. lam y : FloatA. subf (sin (w x)) y in
+  -- ODE model
+  let f = lam x : FloatC. lam y : FloatA. subf (sin (w x)) y in
 
-  -- RODE solution
-  let ys = map (lam x : FloatN. solve f 0. x) xs in
+  -- IVP solution
+  let y = lam xy0 : (FloatC, FloatA). lam x : FloatC. solve f xy0 x in
 
-  -- Output in a format suitable for the plotting script
-  let ys = mapi (lam i : Int. lam y : FloatA. (get xs i, [y])) ys in
-  let ws = map (lam x : FloatN. (x, [w x])) xs in
-  [ys, ws]
+  -- Trace solution and Wiener realization
+  [
+    trace y (x0, y0) times,
+    map (lam x : FloatC. (x, w x)) times
+  ]
+
+let #var"Dist_RODE" = infer (Importance { particles = 5 }) rode
 
 mexpr
 
-let dist = infer (Importance { particles = 5 }) (rode 500 0.01) in
+match distEmpiricalSamples #var"Dist_RODE" with (samples, weights) in
+let samples = map (map (map (lam t : (FloatA, FloatA). (t.0, [t.1])))) samples in
+printWeightedTraces samples weights
 
--- Just make sure that inference completes
-match distEmpiricalSamples dist with (_, weights) in
-utest foldl addf 0. (map exp weights) with 1. using eqfApprox 1e-3 in
-
-()
+-- Local Variables:
+-- compile-command: "cppl --seed 1 --cps partial --dppl-typecheck rode2.mc && ./out | dppl-plot-process --lines && rm ./out"
+-- End:

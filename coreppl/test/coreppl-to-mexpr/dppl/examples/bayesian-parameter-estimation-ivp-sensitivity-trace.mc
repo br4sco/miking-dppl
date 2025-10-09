@@ -1,0 +1,29 @@
+include "./bayesian-parameter-estimation.mc"
+
+/- Illustrates inferring the posterior of IVP solution sensitivites -/
+
+let _n = 200
+let _h = 0.05
+let timesExt = create _n (lam i : Int. mulf _h (int2float (addi i 1)))
+
+let diff1 = lam f : FloatA -> [(FloatA, [FloatA])]. lam x : FloatA.
+  diff f x 1.
+
+let _model = lam t : ().
+  let #var"θ" = assume #var"Dist_θ" in
+  diff1 (lam #var"θ" : FloatA. trace (y #var"θ") (x0, y0) timesExt) #var"θ"
+
+let #var"Dist_dy/dθ_trace" = infer (Importance { particles = 100 }) _model
+
+mexpr
+
+match distEmpiricalSamples #var"Dist_dy/dθ_trace" with (samples, weights) in
+let samples =
+  map
+    (mapi (lam i : Int. lam t : (FloatM, [FloatM]). (get timesExt i, t.1)))
+    samples in
+printWeightedTrace samples weights
+
+-- Local Variables:
+-- compile-command: "cppl --seed 1 --cps partial --dppl-typecheck baysian-parameter-estimation-ivp-sensitivity-trace.mc && ./out | dppl-plot-process && rm ./out"
+-- End:

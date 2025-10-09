@@ -9,7 +9,7 @@ include "either.mc"
 include "./dppl-type-check.mc"
 include "./parser.mc"
 
-lang TestLang = DTCTypeOf + MExprPPL + DPPLParser end
+lang TestLang = DTCTypeOf + MExprPPL end
 
 mexpr
 
@@ -31,8 +31,16 @@ let flt = tyfloatc_ in
 let _typeOf = lam env. lam prog.
   (result.consume
      (typeOf (dtcEnvOfSeq env)
-        (decorateTypesExn
-           (symbolizeAllowFree (parseMExprPPLString prog))))).1 in
+        (use DPPLParser in
+         decorateTypesExn
+           (symbolizeAllowFree
+              (makeKeywords
+                 (parseMExprStringExn
+                    ({
+                      keywords = pplKeywords,
+                      allowFree = true,
+                      builtin = cpplBuiltin
+                    }) prog)))))).1 in
 
 let fi = lam row1. lam col1. lam row2. lam col2.
   Info { filename = "", row1 = row1, col1 = col1, row2 = row2, col2 = col2 } in
@@ -69,17 +77,17 @@ let onFail = utestDefaultToString toString toString in
 
 let env = [] in
 utest _typeOf env (strJoin "\n" [
-  "let a : ModA Float = 0. in",
-  "let b : ModP Float = 0. in",
-  "let c : ModC Float = 0. in",
-  "let d : ModM Float = 0. in",
+  "let a : FloatA = 0. in",
+  "let b : FloatP = 0. in",
+  "let c : FloatC = 0. in",
+  "let d : FloatM = 0. in",
   "(a, b, c, d)" ])
   with Right (_D, tytuple_ (map flt [_M, _M, _M, _M]) )
   using eq else onFail in
 
 let env = [] in
 utest _typeOf env (strJoin "\n" [
-  "(lam a : ModA Float. (lam b : ModM Float. (a, b)) 0.) 0." ])
+  "(lam a : FloatA. (lam b : FloatM. (a, b)) 0.) 0." ])
   with Right (_D, tytuple_ (map flt [_M, _M]) )
   using eq else onFail in
 
@@ -87,10 +95,10 @@ let env = [
   (nameNoSym "test", arr [tytuple_ (map flt [_A, _P, _C, _M])] tyunit_)
 ] in
 utest _typeOf env (strJoin "\n" [
-  "let a : ModA Float = 0. in",
-  "let b : ModP Float = 0. in",
-  "let c : ModC Float = 0. in",
-  "let d : ModM Float = 0. in",
+  "let a : FloatA = 0. in",
+  "let b : FloatP = 0. in",
+  "let c : FloatC = 0. in",
+  "let d : FloatM = 0. in",
   "test (a, b, c, d)" ])
   with Right (_D, tyunit_ )
   using eq else onFail in
@@ -99,30 +107,36 @@ let env = [
   (nameNoSym "test", arr [tytuple_ (map flt [_M, _C, _P, _A])] tyunit_)
 ] in
 utest _typeOf env (strJoin "\n" [
-  "let a : ModA Float = 0. in",
-  "let b : ModP Float = 0. in",
-  "let c : ModC Float = 0. in",
-  "let d : ModM Float = 0. in",
+  "let a : FloatA = 0. in",
+  "let b : FloatP = 0. in",
+  "let c : FloatC = 0. in",
+  "let d : FloatM = 0. in",
   "test (a, b, c, d)" ])
   with Left [DTCArgError (fi 5 5 5 17, None ())]
   using eq else onFail in
 
+let env = [] in
+utest _typeOf env "lam x : FloatA. addf 1. 1."
+  with Right (_D, arrc [(flt _A, _M)] (flt _M))
+  using eq else onFail in
+
 let env = [
-  (nameNoSym "f", arrc [(tytuple_ [(flt _M), (flt _M)], _M)] (flt _A)),
-  (nameNoSym "data", tyseq_ (tytuple_ [(flt _M), (flt _M)]))
+  (nameNoSym "z", arrc [(flt _M, _M)] (tyseq_ (flt _A))),
+  (nameNoSym "d", tyseq_ (flt _M))
 ] in
 utest _typeOf env (strJoin "\n" [
   "let regressionModel =",
-  "  lam f : (ModM Float, ModM Float) -> ModM (ModR Float).",
-  "  lam d : [(ModM Float, ModM Float)].",
+  "  lam d : [FloatM].",
+  "  lam z : FloatM -> ModM (ModR [FloatA]).",
   "  lam t : ().",
-  "    match (assume (Gaussian 1. 1.), assume (Beta 2. 2.))",
+  "    match (assume (Gaussian 1. 1.), assume (Gamma 1. 1.))",
   "    with (theta, nu) in",
   "    iter",
-  "      (lam t : (ModM Float, ModM Float).",
-  "         match t with (x, y) in observe y (Gaussian (f (x, theta)) nu)) d;",
+  "      (lam t : (FloatM, FloatM).",
+  "         match t with (x, y) in observe x (Gaussian y nu))",
+  "         (create (length d) (lam i : Int. (get d i, get (z theta) i)));",
   "      theta in",
-  "infer (Default ()) (regressionModel f data)" ])
+  "infer (Default ()) (regressionModel d z)" ])
   with Right (_D, tydist_ (flt _M) )
   using eq else onFail in
 
@@ -131,21 +145,21 @@ let env = [
                                 -- can type with any coeffect modifier.
 ] in
 utest _typeOf env (strJoin "\n" [
-  "let y = lam x : ModA Float. addf (mulf x x) x in",
+  "let y = lam x : FloatA. addf (mulf x x) x in",
   "diff y r 1." ])
   with Right (_D, flt _M)
   using eq else onFail in
 
 let env = [] in
-utest _typeOf env "lam x : ModA Float. if ltf x 0. then x else subf 0. x"
-  with Left [DTCArgError (fi 1 27 1 28, None ())]
+utest _typeOf env "lam x : FloatA. if ltf x 0. then x else subf 0. x"
+  with Left [DTCArgError (fi 1 23 1 24, None ())]
   using eq else onFail in
 
 let env = [
   (nameNoSym "r", flt _M)
 ] in
 utest _typeOf env (strJoin "\n" [
-  "let y = lam x : ModP Float. if ltf x 0. then x else subf 0. x in",
+  "let y = lam x : FloatP. if ltf x 0. then x else subf 0. x in",
   "diff y r 1." ])
   with Right (_D, flt _M)
   using eq else onFail in
@@ -156,7 +170,7 @@ let env = [
 ] in
 utest _typeOf env (strJoin "\n" [
   "let y = assume t in",
-  "diff (lam x : ModA Float. x) r 1." ])
+  "diff (lam x : FloatA. x) r 1." ])
   with Right (_R, flt _M)
   using eq else onFail in
 
@@ -165,9 +179,9 @@ let env = [
 ] in
 utest _typeOf env (strJoin "\n" [
   "let w = assume (Wiener ()) in",
-  "let z = lam xy: (ModC Float, ModA Float).",
+  "let z = lam xy: (FloatC, FloatA).",
   "  match xy with (x, y) in addf (w x) y in",
-  "diff (lam u : ModA Float. z (r, u)) r 1." ])
+  "diff (lam u : FloatA. z (r, u)) r 1." ])
   with Right (_R, flt _M)
   using eq else onFail in
 
@@ -184,7 +198,7 @@ let env = [
   (nameNoSym "wiener", arrc [(flt _C, _M)] (flt _A))
 ] in
 utest _typeOf env (strJoin "\n" [
-  "lam y : ModA Float. lam x : ModC Float. ",
+  "lam y : FloatA. lam x : FloatC. ",
   "  addf (wiener (addf x 1.)) y" ])
   with Right (_D, arrc [(flt _A, _M), (flt _C, _A)] (flt _A))
   using eq else onFail in
@@ -193,7 +207,7 @@ let env = [
   (nameNoSym "wiener", arrc [(flt _C, _M)] (flt _A))
 ] in
 utest _typeOf env (strJoin "\n" [
-  "lam x : ModC Float. lam y : ModA Float. ",
+  "lam x : FloatC. lam y : FloatA. ",
   "  addf (wiener (addf x 1.)) y" ])
   with Right (_D, arrc [(flt _C, _M), (flt _A, _C)] (flt _A))
   using eq else onFail in
@@ -202,10 +216,23 @@ let env = [
   (nameNoSym "wiener", arrc [(flt _C, _M)] (flt _A))
 ] in
 utest _typeOf env (strJoin "\n" [
-  "lam z : ModA Float. diff (lam y : ModA Float.",
-  "  (lam x : (ModC Float, ModA Float). addf (wiener x.0) x.1) (0., y))",
+  "lam z : FloatA. diff (lam y : FloatA.",
+  "  (lam x : (FloatC, FloatA). addf (wiener x.0) x.1) (0., y))",
   "  1. z" ])
   with Right (_D, arrc [(flt _A, _M)] (flt _A))
+  using eq else onFail in
+
+let env = [
+  (nameNoSym "times", tyseq_ (flt _M)),
+  (nameNoSym "xy0", tytuple_ [flt _M, flt _M])
+] in
+utest _typeOf env (strJoin "\n" [
+  "let rode = lam t : ().",
+  "  let w = assume (Wiener ()) in",
+  "  let f = lam x : FloatC. lam y : FloatA. subf (sin (w x)) y in",
+  "  map (lam x1 : FloatC. solveode (Default ()) f xy0 x1) times",
+  "  in infer (Default ()) rode"])
+  with Right (_D,  tydist_ (tyseq_ (tytuple_ [flt _M, flt _M])))
   using eq else onFail in
 
 ()

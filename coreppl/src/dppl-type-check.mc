@@ -31,24 +31,24 @@ let dtcEffectToString : DTCEffect -> String = lam e.
   case ModR _ then "ModR"
   end
 
--- Less than or equal over effects (e ≤ e), where R < D.
+-- Less than or equal over effects (e ≤ e), where D < R.
 let dtcLeqe : DTCEffect -> DTCEffect -> Bool
   = lam a. lam b.
     switch (a, b)
-    case (_, ModD _) then true
-    case (ModD _, _) then false
-    case (ModR _, _) then true
-    case (_, ModR _) then false
+    case (_, ModR _) then true
+    case (ModR _, _) then false
+    case (ModD _, _) then true
+    case (_, ModD _) then false
     end
 
 utest dtcLeqe (ModD ()) (ModD ()) with true
-utest dtcLeqe (ModD ()) (ModR ()) with false
-utest dtcLeqe (ModR ()) (ModD ()) with true
+utest dtcLeqe (ModD ()) (ModR ()) with true
+utest dtcLeqe (ModR ()) (ModD ()) with false
 utest dtcLeqe (ModR ()) (ModR ()) with true
 
 -- Multiplication over effects (e ⋅ e).
 let dtcMule : DTCEffect -> DTCEffect -> DTCEffect
-  = lam a. lam b. if dtcLeqe a b then a else b
+  = lam a. lam b. if dtcLeqe a b then b else a
 
 utest dtcMule (ModD ()) (ModD ()) with (ModD ())
 utest dtcMule (ModD ()) (ModR ()) with (ModR ())
@@ -92,7 +92,7 @@ let _dtcCoeffectToInt : DTCCoeffect -> Int = lam c.
   case ModA _ then 3
   end
 
--- Less than or equal over coeffects (c ≤ c), where M < P < A.
+-- Less than or equal over coeffects (c ≤ c), where M < P < A and M < C < A.
 let dtcLeqc : DTCCoeffect -> DTCCoeffect -> Bool
   = lam a. lam b. leqi (_dtcCoeffectToInt a) (_dtcCoeffectToInt b)
 
@@ -322,8 +322,10 @@ lang DTCFloatTypeAst = DTCAstBase + FloatTypeAst + PrettyPrint
   -- PPrint
   sem typePrecedence = | TyFloatC _ -> 1
   sem getTypeStringCode (indent : Int) (env: PprintEnv) =
-  | TyFloatC (r & {c = c}) ->
-    (env, join [dtcCoeffectToString c, " Float"])
+  | TyFloatC (r & {c = ModA _}) -> (env, "FloatA")
+  | TyFloatC (r & {c = ModP _}) -> (env, "FloatP")
+  | TyFloatC (r & {c = ModC _}) -> (env, "FloatC")
+  | TyFloatC (r & {c = ModM _}) -> (env, "FloatM")
 
   -- Builder
   sem tyfloatc_ : DTCCoeffect -> Type
@@ -472,7 +474,7 @@ lang DTCFunTypeAst = DTCAstBase + FunTypeAst + PrettyPrint
       subtype (r.from, l.from),
       subtype (l.to, r.to),
       dtcLeqc l.c r.c,
-      dtcLeqe r.e l.e
+      dtcLeqe l.e r.e
     ]
 
   sem joinType =
@@ -481,7 +483,7 @@ lang DTCFunTypeAst = DTCAstBase + FunTypeAst + PrettyPrint
       optionBind (joinType (l.to, r.to)) (lam to.
         Some
           (TyArrowCE
-            (if and (dtcLeqc l.c r.c) (dtcLeqe r.e l.e) then
+            (if and (dtcLeqc l.c r.c) (dtcLeqe l.e r.e) then
               { r with from = from, to = to }
              else { l with from = from, to = to }))))
 
@@ -491,7 +493,7 @@ lang DTCFunTypeAst = DTCAstBase + FunTypeAst + PrettyPrint
       optionBind (meetType (l.to, r.to)) (lam to.
         Some
           (TyArrowCE
-            (if and (dtcLeqc l.c r.c) (dtcLeqe r.e l.e) then
+            (if and (dtcLeqc l.c r.c) (dtcLeqe l.e r.e) then
               { l with from = from, to = to }
              else { r with from = from, to = to }))))
   sem setC c =
@@ -751,7 +753,7 @@ lang DTCTypeError = Ast + DTCEnv + DTCFloatTypeAst + PrettyPrint
   | DTCDiffFnError (Info, Option (DTCCoeffect, Type))
   | DTCPolyDistError Info
   | DTCPolyConstError Info
-  | DTCUnuspportedTermError Info
+  | DTCUnuspportedTermError (Info, Option Expr)
   | DTCInvalidContextError (Info, Option (Name))
   | DTCContextConstraintError (Info, Option (DTCCoeffect,  DTCEnv))
 
@@ -766,7 +768,7 @@ lang DTCTypeError = Ast + DTCEnv + DTCFloatTypeAst + PrettyPrint
   | DTCDiffFnError (i, _)
   | DTCPolyDistError i
   | DTCPolyConstError i
-  | DTCUnuspportedTermError i
+  | DTCUnuspportedTermError (i, _) -> i
   | DTCInvalidContextError (i, _)
   | DTCContextConstraintError (i, _) -> i
 
@@ -831,8 +833,9 @@ lang DTCTypeError = Ast + DTCEnv + DTCFloatTypeAst + PrettyPrint
       "* Cannot infer the type of this polymorphic intrinsic.\n",
       "* Try to apply it to one or more arguments."
     ])
-  | DTCUnuspportedTermError info ->
-    (info, "* This term is currently not supported")
+  | DTCUnuspportedTermError (info, Some tm) ->
+    dprint tm;
+    (info, strJoin "\n" ["* This term is currently not supported:", expr2str tm])
   | DTCInvalidContextError (info, Some name) ->
     (info, join [
       "* The variable ", nameGetStr name,
@@ -842,7 +845,7 @@ lang DTCTypeError = Ast + DTCEnv + DTCFloatTypeAst + PrettyPrint
   | DTCContextConstraintError (info, Some (c, env)) ->
     (info, join [
       "* The type context ", dtcEnvToString env, "\n",
-      "* is not greater or equal to ", dtcCoeffectToString c
+      "* is not less than or equal to ", dtcCoeffectToString c
     ])
   | err -> (typeErrorInfo err, "* No error message")
 
@@ -868,7 +871,7 @@ lang DTCTypeOfBase = DTCTypeError + DTCEnv
 
   sem typeOfH : DTCEnv -> Expr -> Result DTCTypeError DTCTypeError ResultOk
   sem typeOfH env =| tm ->
-    result.err (DTCUnuspportedTermError (infoTm tm))
+    result.err (DTCUnuspportedTermError (infoTm tm, Some tm))
 
   sem typeOfHPromote
     : DTCEnv -> Expr -> Result DTCTypeError DTCTypeError ResultOk
@@ -1302,6 +1305,10 @@ lang DTCFloatType = DTCTyConst
   sem dtcConstType info =| CFloat _ -> result.ok (ityfloatc_ info (ModM ()))
 end
 
+-- NOTE(oerikss, 2025-10-08): We assume that elementary functions are analytic
+-- and defined on the whole real number line. Evaluation at undefined inputs
+-- will result in runtime errors.
+
 lang DTCArithFloatType = ArithFloatAst + DTCTyConst
   sem dtcConstType info =
   | CAddf _ | CSubf _ | CMulf _ | CDivf _ ->
@@ -1317,6 +1324,9 @@ lang DTCElementaryFunctionsType = ElementaryFunctions + DTCTyConst
   sem dtcConstType info =
   | CSin _ | CCos _ | CSqrt _  | CExp _ | CLog _ ->
     let tyfloata = ityfloatc_ info (ModA ()) in
+    result.ok (iarr_ info tyfloata tyfloata)
+  | CAbsf _ ->
+    let tyfloata = ityfloatc_ info (ModP ()) in
     result.ok (iarr_ info tyfloata tyfloata)
   | CPow _ ->
     let tyfloata = ityfloatc_ info (ModA ()) in
@@ -3321,75 +3331,6 @@ utest
     (nlam_ _x (flt _P)
        (mulf_ x (expectation_ (infer__ (nlam_ _y tyunit_ (float_ 1.))))))
   with Right (_D, arrc [(flt _P, _M)] (flt _P))
-  using eq else onFail
-in
-
--- ┌────────────────┐
--- │ Paper Examples │
--- └────────────────┘
-
-
--- Regression Model
-
-let n = 2 in
-
-let _theta = nameNoSym "θ" in
-let _nu = nameNoSym "ν" in
-let _d = nameNoSym "d" in
-let _Data = nameNoSym "Data" in
-let _RegressionModel = nameNoSym "RegressionModel" in
-let _Model = nameNoSym "Model" in
-
-let _RM2 = tytuple_ [flt _M, flt _M] in
-let _RM2n = tytuple_ (create n (lam. _RM2)) in
-let _tyModel = arrce [(_RM2, _M, _R)] (flt _A) in
-
-let model = lam_ [ (_f, _tyModel),
-                   (_d, _RM2n),
-                   (_z, tyunit_) ]
-              (bindall_ [
-                nulet_ _theta (assume_ (gaussian_ (float_ 1.) (float_ 1.))),
-                nulet_ _nu (assume_ (beta_ (float_ 2.) (float_ 2.))),
-                nulet_ _h (nlam_ _x (_RM2)
-                             (observe_
-                                (tupleproj_ 1 x)
-                                (gaussian_
-                                   (f [utuple_ [tupleproj_ 0 x, nvar_ _theta]])
-                                   (nvar_ _nu)))) ]
-                 (foldl1 semi_
-                    (snoc
-                       (create n (lam i. h [tupleproj_ i (nvar_ _d)]))
-                       (nvar_ _theta))))
-in
-
--- utest
---   _typeOf [] model
---   with Right (_D, tydist_ (flt _M))
---   using eq else onFail
--- in
-
-let tm =
-  bind_ (nulet_ _RegressionModel model)
-    (infer__ (appf2_ (nvar_ _RegressionModel) (nvar_ _Model) (nvar_ _Data)))
-in
-
--- printLn (expr2str tm);
-
-utest
-  _typeOf [(_Model, _tyModel), (_Data, _RM2n)] tm
-  with Right (_D, tydist_ (flt _M))
-  using eq else onFail
-in
-
--- Prevent Unsafe Coercion of Coeffects
-
-let f1 = nlam_ _f (arr [flt _A] (flt _A)) (f [float_ 0.]) in
-let f2 = nlam_ _y (flt _A) x in
-let tm = app_ f1 f2 in
-
-utest
-  _typeOf [(_x, flt _A)] tm
-  with Right (_D, flt _A)
   using eq else onFail
 in
 

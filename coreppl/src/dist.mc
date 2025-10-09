@@ -276,7 +276,7 @@ lang UniformDist = Dist
 end
 
 lang ReciprocalDist = Dist
-  syn Dist = 
+  syn Dist =
   | DReciprocal { a : Expr, b : Expr }
 
   sem smapAccumL_Dist_Expr f acc =
@@ -547,7 +547,7 @@ let tydist_ = use Dist in
 let uniform_ = use UniformDist in
   lam a. lam b. dist_ (DUniform {a = a, b = b})
 
-let reciprocal_ = use ReciprocalDist in 
+let reciprocal_ = use ReciprocalDist in
   lam a. lam b. dist_ (DReciprocal {a = a, b = b})
 
 let uniformDiscrete_ = use UniformDiscreteDist in

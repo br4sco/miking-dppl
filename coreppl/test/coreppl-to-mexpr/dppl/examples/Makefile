@@ -1,15 +1,22 @@
 CPPL := ../../../../../build/cppl
-EXAMPLES := baysian-parameter-estimation.json baysian-parameter-estimation-sensitivities.json ode-sensitivites.json rode-faster.json
+EXAMPLES := \
+	bayesian-parameter-estimation-run.json \
+	bayesian-parameter-estimation-ivp-sensitivity-run.json \
+	bayesian-parameter-estimation-ivp-solution-run.json \
+	bayesian-parameter-estimation-ivp-solution-trace-run.json \
+	bayesian-parameter-estimation-ivp-sensitivity-trace-run.json \
+	ode-sensitivites-two-methods-run.json \
+	rode-run.json
 
 .PHONY: all
 all: $(EXAMPLES)
 
-.PHONY: plot
-plot:
+.PHONY: plots
+plots:
 	python plot.py
 
 %.exe: %.mc
-	$(CPPL) --seed 1 --test --dppl-typecheck --output $@ $<
+	$(CPPL) --seed 1 --dppl-typecheck --output $@ $<
 
 %.json: %.exe
 	./$<

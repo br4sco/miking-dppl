@@ -502,6 +502,8 @@ lang ODELoader = SolveODE + MCoreLoader + MExprSubstitute
   sem odeSolverName =
   | RK4 _ -> "odeSolverRK4Solve"
   | EF _ -> "odeSolverEFSolve"
+  | RK4EC _ -> "odeSolverRK4HalfStepErrControlSolve"
+  | EFEC _ -> "odeSolverEFHalfStepErrControlSolve"
   | EFA _ -> "odeSolverEFASolve"
   | method -> error (join [
     nameGetStr (odeSolverMethodName method),
@@ -511,6 +513,7 @@ lang ODELoader = SolveODE + MCoreLoader + MExprSubstitute
   sem odeSolverArgs : ODESolverMethod -> [Expr]
   sem odeSolverArgs =
   | ODESolverDefault r | RK4 r | EF r -> [r.add, r.smul, r.stepSize]
+  | RK4EC r | EFEC r -> [r.add, r.smul, r.stepSize, r.ok]
   | EFA r -> [r.add, r.smul, r.stepSize, r.n]
 
   -- Replaces default ODE solver methods with a concrete method.
@@ -720,6 +723,7 @@ lang ADLoader = MCoreLoader + CorePPL + Delayed + Diff +
   | CLog _ -> adliftConstH env e "log"
   | CSqrt _ -> adliftConstH env e "sqrt"
   | CPow _ -> adliftConstH env e "pow"
+  | CAbsf _ -> adliftConstH env e "absf"
   | CFloat2string _ -> adliftConstH env e "float2string"
   | const ->
     if env.config.insertFloatAssertions then

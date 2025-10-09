@@ -49,6 +49,14 @@ lang DPPLParser =
     match f acc r.ty with (acc, ty) in
     (acc, TyModE { r with ty = ty })
 
+  sem getTypeStringCode (indent : Int) (env : PprintEnv) =
+  | TyModC t ->
+    match getTypeStringCode indent env t.ty with (env, ty) in
+    (env, join ["Mod(", dtcCoeffectToString t.c, ",", ty, ")"])
+  | TyModE t ->
+    match getTypeStringCode indent env t.ty with (env, ty) in
+    (env, join ["Mod(", dtcEffectToString t.e, ",", ty, ")"])
+
   sem _interpretMethod : Expr -> (Info, String, Map SID Expr)
   sem _interpretMethod =
   | TmConApp {ident = ident, body = TmRecord r, info = info} ->
@@ -289,6 +297,10 @@ lang DPPLParser =
   | "ModC" -> Some(1, lam seq. TyModC { c = ModC (), info = info, ty = get seq 0 })
   | "ModM" -> Some(1, lam seq. TyModC { c = ModM (), info = info, ty = get seq 0 })
   | "ModR" -> Some(1, lam seq. TyModE { e = ModR (), info = info, ty = get seq 0 })
+  | "FloatA" -> Some(0, lam seq. TyFloatC { info = info, c = ModA () })
+  | "FloatP" -> Some(0, lam seq. TyFloatC { info = info, c = ModP () })
+  | "FloatC" -> Some(0, lam seq. TyFloatC { info = info, c = ModC () })
+  | "FloatM" -> Some(0, lam seq. TyFloatC { info = info, c = ModM () })
 
   sem decorateTypesExn : Expr -> Expr
   sem decorateTypesExn =| tm ->
@@ -297,7 +309,6 @@ lang DPPLParser =
   sem decorateTypesH : Type -> Type
   sem decorateTypesH =
   | TyFloat r -> TyFloatC { info = r.info, c = ModA () }
-  | TyModC {c = c, ty = TyFloat r} -> TyFloatC { info = r.info, c = c }
   | TyArrow r ->
     let ty = TyArrowCE {
       info = r.info, from = r.from, to = r.to, c = ModA (), e = ModD () } in
@@ -325,6 +336,10 @@ lang DPPLParser =
     errorSingle [r.info]
       "Parse error: Effect decoration appeared outside an arrow return type"
   | ty -> smap_Type_Type decorateTypesH ty
+
+  sem eraseDecorationsType =
+  | TyModC r -> eraseDecorationsType r.ty
+  | TyModE r -> eraseDecorationsType r.ty
 end
 
 -- Extend builtins with CorePPL builtins
@@ -341,6 +356,7 @@ let cpplBuiltin = use MExprPPL in concat
   , ("exp", CExp ())
   , ("log", CLog ())
   , ("pow", CPow ())
+  , ("absf", CAbsf ())
   ] builtin
 
 let defaultBootParserParseCorePPLFileArg =

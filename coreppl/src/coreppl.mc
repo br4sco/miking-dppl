@@ -62,17 +62,15 @@ lang ElementaryFunctions =
   | CExp {}
   | CLog {}
   | CPow {}
-
-  sem tyConst =
-  | CSin _ | CCos _ | CSqrt _ | CExp _ | CLog _ -> tyarrows_ [tyfloat_, tyfloat_]
-  | CPow _ -> tyarrows_ [tyfloat_, tyfloat_, tyfloat_]
+  | CAbsf {}
 
   sem tyConstBase d =
-  | CSin _ | CCos _ | CSqrt _ | CExp _ | CLog _ -> tyarrows_ [tyfloat_, tyfloat_]
+  | CSin _ | CCos _ | CSqrt _ | CExp _ | CLog _ | CAbsf _ ->
+    tyarrows_ [tyfloat_, tyfloat_]
   | CPow _ -> tyarrows_ [tyfloat_, tyfloat_, tyfloat_]
 
   sem constArity =
-  | CSin _ | CCos _ | CSqrt _ | CExp _ | CLog _ -> 1
+  | CSin _ | CCos _ | CSqrt _ | CExp _ | CLog _ | CAbsf _ -> 1
   | CPow _ -> 2
 
   sem getConstStringCode (indent : Int) =
@@ -82,6 +80,7 @@ lang ElementaryFunctions =
   | CExp _ -> "exp"
   | CLog _ -> "log"
   | CPow _ -> "pow"
+  | CAbsf _ -> "absf"
 
   sem delta info =
   | (CSin _, [TmConst (cr & {val = CFloat fr})]) ->
@@ -96,14 +95,18 @@ lang ElementaryFunctions =
     TmConst { cr with val = CFloat { fr with val = log fr.val }, info = info }
   | (CPow _, [TmConst (cr & {val = CFloat fr1}), TmConst {val = CFloat fr2}]) ->
     TmConst {
-      cr with val = CFloat { fr2 with val = pow fr1.val fr2.val }, info = info
-    }
+      cr with val = CFloat { fr2 with val = pow fr1.val fr2.val }, info = info }
+  | (CAbsf _, [TmConst (cr & {val = CFloat fr})]) ->
+    TmConst { cr with
+              val = CFloat {
+                fr with val = if ltf fr.val 0. then negf fr.val else fr.val },
+              info = info }
 
   sem constHasSideEffect =
-  | CSin _ | CCos _ | CSqrt _ | CExp _ | CLog _ | CPow _ -> false
+  | CSin _ | CCos _ | CSqrt _ | CExp _ | CLog _ | CPow _ | CAbsf _ -> false
 
   sem generateConstraintsConst graph info ident =
-  | CSin _ | CCos _ | CSqrt _ | CExp _ | CLog _ | CPow _ -> graph
+  | CSin _ | CCos _ | CSqrt _ | CExp _ | CLog _ | CPow _ | CAbsf _ -> graph
 
   -- Builders
   sem sin_ =| x -> app_ (uconst_ (CSin ())) x
@@ -112,6 +115,7 @@ lang ElementaryFunctions =
   sem exp_ =| x -> app_ (uconst_ (CExp ())) x
   sem log_ =| x -> app_ (uconst_ (CLog ())) x
   sem pow_ =| x -> app_ (uconst_ (CPow ())) x
+  sem absf_ =| x -> app_ (uconst_ (CAbsf ())) x
 end
 
 

@@ -250,6 +250,14 @@ let _pow : Float -> Float -> Float
       else _powf a b
     else _powf a b
 
+recursive let _absf : Float -> Float
+  = lam a.
+    if isfloat a then absf a
+    else
+      match _uc a with (e, ap, at) in
+      _uc (e, _absf (_uc ap), if ltf (_uc ap) 0. then -1. else 1.)
+end
+
 recursive let float2string_ : Float -> String
   = lam a.
     if isfloat a then float2string a
@@ -278,6 +286,7 @@ let exp : Float -> Float = _exp
 let log : Float -> Float = _log
 let sqrt : Float -> Float = _sqrt
 let pow : Float -> Float -> Float = _pow
+let absf : Float -> Float = _absf
 let float2string : Float -> String = float2string_
 
 let diff : ([Float] -> [Float]) -> [Float] -> [Float] -> [Float]
