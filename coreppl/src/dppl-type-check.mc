@@ -46,9 +46,37 @@ utest dtcLeqe (ModD ()) (ModR ()) with true
 utest dtcLeqe (ModR ()) (ModD ()) with false
 utest dtcLeqe (ModR ()) (ModR ()) with true
 
+-- The greatest lower bound of two effects.
+let dtcGlbe : DTCEffect -> DTCEffect -> DTCEffect
+  = lam a. lam b.
+    switch (a, b)
+    case (ModD _, _) then a
+    case (_ , ModD _) then b
+    case _ then a
+    end
+
+utest dtcGlbe (ModD ()) (ModD ()) with ModD ()
+utest dtcGlbe (ModD ()) (ModR ()) with ModD ()
+utest dtcGlbe (ModR ()) (ModD ()) with ModD ()
+utest dtcGlbe (ModR ()) (ModR ()) with ModR ()
+
+-- The least upper bound of two effects.
+let dtcLube : DTCEffect -> DTCEffect -> DTCEffect
+  = lam a. lam b.
+    switch (a, b)
+    case (ModR _, _) then a
+    case (_ , ModR _) then b
+    case _ then a
+    end
+
+utest dtcLube (ModD ()) (ModD ()) with ModD ()
+utest dtcLube (ModD ()) (ModR ()) with ModR ()
+utest dtcLube (ModR ()) (ModD ()) with ModR ()
+utest dtcLube (ModR ()) (ModR ()) with ModR ()
+
 -- Multiplication over effects (e ⋅ e).
 let dtcMule : DTCEffect -> DTCEffect -> DTCEffect
-  = lam a. lam b. if dtcLeqe a b then b else a
+  = dtcLube
 
 utest dtcMule (ModD ()) (ModD ()) with (ModD ())
 utest dtcMule (ModD ()) (ModR ()) with (ModR ())
@@ -69,127 +97,195 @@ utest dtcEqe (ModR ()) (ModD ()) with false
 utest dtcEqe (ModR ()) (ModR ()) with true
 
 -- Coeffects are either analytic (A), piecewise analytic under analytic
--- partitioning (P), continuous (C), or measurable (M).
+-- partitioning (P), continuous (C), P and C (PC), or measurable (M).
 type DTCCoeffect
-con ModA : () -> DTCCoeffect
-con ModP : () -> DTCCoeffect
-con ModC : () -> DTCCoeffect
-con ModM : () -> DTCCoeffect
+con ModA  : () -> DTCCoeffect
+con ModPC : () -> DTCCoeffect
+con ModP  : () -> DTCCoeffect
+con ModC  : () -> DTCCoeffect
+con ModM  : () -> DTCCoeffect
 
 let dtcCoeffectToString : DTCCoeffect -> String = lam c.
   switch c
-  case ModA _ then "ModA"
-  case ModP _ then "ModP"
-  case ModC _ then "ModC"
-  case ModM _ then "ModM"
+  case ModA _  then "ModA"
+  case ModPC _ then "ModPC"
+  case ModP _  then "ModP"
+  case ModC _  then "ModC"
+  case ModM _  then "ModM"
   end
 
 let _dtcCoeffectToInt : DTCCoeffect -> Int = lam c.
   switch c
-  case ModM _ then 0
-  case ModC _ then 1
-  case ModP _ then 2
-  case ModA _ then 3
+  case ModM  _          then 0
+  case ModC  _ | ModP _ then 1   -- NOTE(oerikss, 2025-10-13): We cannot order C and P.
+  case ModPC _          then 2
+  case ModA  _          then 3
   end
 
 -- Less than or equal over coeffects (c ≤ c), where M < P < A and M < C < A.
 let dtcLeqc : DTCCoeffect -> DTCCoeffect -> Bool
-  = lam a. lam b. leqi (_dtcCoeffectToInt a) (_dtcCoeffectToInt b)
+  = lam a. lam b.
+    match (a, b) with (ModC _, ModP _) | (ModP _, ModC _) then false
+    else leqi (_dtcCoeffectToInt a) (_dtcCoeffectToInt b)
 
-utest dtcLeqc (ModA ()) (ModA ()) with true
-utest dtcLeqc (ModA ()) (ModP ()) with false
-utest dtcLeqc (ModA ()) (ModC ()) with false
-utest dtcLeqc (ModA ()) (ModM ()) with false
+utest dtcLeqc (ModA ()) (ModA ())   with true
+utest dtcLeqc (ModA ()) (ModPC ())  with false
+utest dtcLeqc (ModA ()) (ModP ())   with false
+utest dtcLeqc (ModA ()) (ModC ())   with false
+utest dtcLeqc (ModA ()) (ModM ())   with false
 
-utest dtcLeqc (ModP ()) (ModA ()) with true
-utest dtcLeqc (ModP ()) (ModP ()) with true
-utest dtcLeqc (ModP ()) (ModC ()) with false
-utest dtcLeqc (ModP ()) (ModM ()) with false
+utest dtcLeqc (ModPC ()) (ModA ())  with true
+utest dtcLeqc (ModPC ()) (ModPC ()) with true
+utest dtcLeqc (ModPC ()) (ModP ())  with false
+utest dtcLeqc (ModPC ()) (ModC ())  with false
+utest dtcLeqc (ModPC ()) (ModM ())  with false
 
-utest dtcLeqc (ModC ()) (ModA ()) with true
-utest dtcLeqc (ModC ()) (ModP ()) with true
-utest dtcLeqc (ModC ()) (ModC ()) with true
-utest dtcLeqc (ModC ()) (ModM ()) with false
+utest dtcLeqc (ModP ()) (ModA ())   with true
+utest dtcLeqc (ModP ()) (ModPC ())  with true
+utest dtcLeqc (ModP ()) (ModP ())   with true
+utest dtcLeqc (ModP ()) (ModC ())   with false
+utest dtcLeqc (ModP ()) (ModM ())   with false
 
-utest dtcLeqc (ModM ()) (ModA ()) with true
-utest dtcLeqc (ModM ()) (ModP ()) with true
-utest dtcLeqc (ModM ()) (ModC ()) with true
-utest dtcLeqc (ModM ()) (ModM ()) with true
+utest dtcLeqc (ModC ()) (ModA ())   with true
+utest dtcLeqc (ModC ()) (ModPC ())  with true
+utest dtcLeqc (ModC ()) (ModP ())   with false
+utest dtcLeqc (ModC ()) (ModC ())   with true
+utest dtcLeqc (ModC ()) (ModM ())   with false
+
+utest dtcLeqc (ModM ()) (ModA ())   with true
+utest dtcLeqc (ModM ()) (ModPC ())  with true
+utest dtcLeqc (ModM ()) (ModP ())   with true
+utest dtcLeqc (ModM ()) (ModC ())   with true
+utest dtcLeqc (ModM ()) (ModM ())   with true
 
 -- Equality over coeffects (c = c).
 let dtcEqc : DTCCoeffect -> DTCCoeffect -> Bool
-  = lam a. lam b. eqi (_dtcCoeffectToInt a) (_dtcCoeffectToInt b)
+  = lam a. lam b.
+    switch (a, b)
+    case (ModM _, ModM _)
+       | (ModC _, ModC _)
+       | (ModP _, ModP _)
+       | (ModPC _, ModPC _)
+       | (ModA _, ModA _) then true
+    case _ then false
+    end
 
-utest dtcEqc (ModA ()) (ModA ()) with true
-utest dtcEqc (ModA ()) (ModP ()) with false
-utest dtcEqc (ModA ()) (ModC ()) with false
-utest dtcEqc (ModA ()) (ModM ()) with false
+utest dtcEqc (ModA ()) (ModA ())   with true
+utest dtcEqc (ModA ()) (ModPC ())  with false
+utest dtcEqc (ModA ()) (ModP ())   with false
+utest dtcEqc (ModA ()) (ModC ())   with false
+utest dtcEqc (ModA ()) (ModM ())   with false
 
-utest dtcEqc (ModP ()) (ModA ()) with false
-utest dtcEqc (ModP ()) (ModP ()) with true
-utest dtcEqc (ModP ()) (ModC ()) with false
-utest dtcEqc (ModP ()) (ModM ()) with false
+utest dtcEqc (ModPC ()) (ModA ())  with false
+utest dtcEqc (ModPC ()) (ModPC ()) with true
+utest dtcEqc (ModPC ()) (ModP ())  with false
+utest dtcEqc (ModPC ()) (ModC ())  with false
+utest dtcEqc (ModPC ()) (ModM ())  with false
 
-utest dtcEqc (ModC ()) (ModA ()) with false
-utest dtcEqc (ModC ()) (ModP ()) with false
-utest dtcEqc (ModC ()) (ModC ()) with true
-utest dtcEqc (ModC ()) (ModM ()) with false
+utest dtcEqc (ModP ()) (ModA ())   with false
+utest dtcEqc (ModP ()) (ModPC ())  with false
+utest dtcEqc (ModP ()) (ModP ())   with true
+utest dtcEqc (ModP ()) (ModC ())   with false
+utest dtcEqc (ModP ()) (ModM ())   with false
 
-utest dtcEqc (ModM ()) (ModA ()) with false
-utest dtcEqc (ModM ()) (ModP ()) with false
-utest dtcEqc (ModM ()) (ModC ()) with false
-utest dtcEqc (ModM ()) (ModM ()) with true
+utest dtcEqc (ModC ()) (ModA ())   with false
+utest dtcEqc (ModC ()) (ModPC ())  with false
+utest dtcEqc (ModC ()) (ModP ())   with false
+utest dtcEqc (ModC ()) (ModC ())   with true
+utest dtcEqc (ModC ()) (ModM ())   with false
 
--- Min over coeffects (min(c,c)).
-let dtcMinc : DTCCoeffect -> DTCCoeffect -> DTCCoeffect
-  = lam a. lam b. if dtcLeqc a b then a else b
+utest dtcEqc (ModM ()) (ModA ())   with false
+utest dtcEqc (ModM ()) (ModPC ())  with false
+utest dtcEqc (ModM ()) (ModP ())   with false
+utest dtcEqc (ModM ()) (ModC ())   with false
+utest dtcEqc (ModM ()) (ModM ())   with true
 
-utest dtcMinc (ModA ()) (ModA ()) with (ModA ())
-utest dtcMinc (ModA ()) (ModP ()) with (ModP ())
-utest dtcMinc (ModA ()) (ModC ()) with (ModC ())
-utest dtcMinc (ModA ()) (ModM ()) with (ModM ())
+-- Greates lower bound of two coeffects.
+let dtcGlbc : DTCCoeffect -> DTCCoeffect -> DTCCoeffect
+  = lam a. lam b.
+    switch (a, b)
+    case (ModM _, _) | (_, ModM _) then ModM ()
+    case (ModC _, ModP _) | (ModP _, ModC _) then ModM ()
+    case (ModC _, _) | (_, ModC _) then ModC ()
+    case (ModP _, _) | (_, ModP _) then ModP ()
+    case (ModPC _, _) | (_, ModPC _) then ModPC ()
+    case (ModA _, ModA _) | (ModA _, ModA _) then ModA ()
+    end
 
-utest dtcMinc (ModP ()) (ModA ()) with (ModP ())
-utest dtcMinc (ModP ()) (ModP ()) with (ModP ())
-utest dtcMinc (ModP ()) (ModC ()) with (ModC ())
-utest dtcMinc (ModP ()) (ModM ()) with (ModM ())
+utest dtcGlbc (ModA ()) (ModA ())   with (ModA ())
+utest dtcGlbc (ModA ()) (ModPC ())  with (ModPC ())
+utest dtcGlbc (ModA ()) (ModP ())   with (ModP ())
+utest dtcGlbc (ModA ()) (ModC ())   with (ModC ())
+utest dtcGlbc (ModA ()) (ModM ())   with (ModM ())
 
-utest dtcMinc (ModC ()) (ModA ()) with (ModC ())
-utest dtcMinc (ModC ()) (ModP ()) with (ModC ())
-utest dtcMinc (ModC ()) (ModC ()) with (ModC ())
-utest dtcMinc (ModC ()) (ModM ()) with (ModM ())
+utest dtcGlbc (ModPC ()) (ModA ())  with (ModPC ())
+utest dtcGlbc (ModPC ()) (ModPC ()) with (ModPC ())
+utest dtcGlbc (ModPC ()) (ModP ())  with (ModP ())
+utest dtcGlbc (ModPC ()) (ModC ())  with (ModC ())
+utest dtcGlbc (ModPC ()) (ModM ())  with (ModM ())
 
-utest dtcMinc (ModM ()) (ModA ()) with (ModM ())
-utest dtcMinc (ModM ()) (ModP ()) with (ModM ())
-utest dtcMinc (ModM ()) (ModC ()) with (ModM ())
-utest dtcMinc (ModM ()) (ModM ()) with (ModM ())
+utest dtcGlbc (ModP ()) (ModA ())   with (ModP ())
+utest dtcGlbc (ModP ()) (ModPC ())  with (ModP ())
+utest dtcGlbc (ModP ()) (ModP ())   with (ModP ())
+utest dtcGlbc (ModP ()) (ModC ())   with (ModM ())
+utest dtcGlbc (ModP ()) (ModM ())   with (ModM ())
 
--- Max over coeffects (max(c,c)).
-let dtcMaxc : DTCCoeffect -> DTCCoeffect -> DTCCoeffect
-  = lam a. lam b. if dtcLeqc a b then b else a
+utest dtcGlbc (ModC ()) (ModA ())   with (ModC ())
+utest dtcGlbc (ModC ()) (ModPC ())  with (ModC ())
+utest dtcGlbc (ModC ()) (ModP ())   with (ModM ())
+utest dtcGlbc (ModC ()) (ModC ())   with (ModC ())
+utest dtcGlbc (ModC ()) (ModM ())   with (ModM ())
 
-utest dtcMaxc (ModA ()) (ModA ()) with (ModA ())
-utest dtcMaxc (ModA ()) (ModP ()) with (ModA ())
-utest dtcMaxc (ModA ()) (ModC ()) with (ModA ())
-utest dtcMaxc (ModA ()) (ModM ()) with (ModA ())
+utest dtcGlbc (ModM ()) (ModA ())   with (ModM ())
+utest dtcGlbc (ModM ()) (ModPC ())  with (ModM ())
+utest dtcGlbc (ModM ()) (ModP ())   with (ModM ())
+utest dtcGlbc (ModM ()) (ModC ())   with (ModM ())
+utest dtcGlbc (ModM ()) (ModM ())   with (ModM ())
 
-utest dtcMaxc (ModP ()) (ModA ()) with (ModA ())
-utest dtcMaxc (ModP ()) (ModP ()) with (ModP ())
-utest dtcMaxc (ModP ()) (ModC ()) with (ModP ())
-utest dtcMaxc (ModP ()) (ModM ()) with (ModP ())
+-- Least upper bound of two coeffects.
+let dtcLubc : DTCCoeffect -> DTCCoeffect -> DTCCoeffect
+  = lam a. lam b.
+    switch (a, b)
+    case (ModA _, _) | (_, ModA _) then ModA ()
+    case (ModPC _, _) | (_, ModPC _) then ModPC ()
+    case (ModP _, ModC _) | (ModC _, ModP _) then ModPC ()
+    case (ModP _, _) | (_, ModP _) then ModP ()
+    case (ModC _, _) | (_, ModC _) then ModC ()
+    case (ModM _, ModM _) | (ModM _, ModM _) then ModM ()
+    end
 
-utest dtcMaxc (ModC ()) (ModA ()) with (ModA ())
-utest dtcMaxc (ModC ()) (ModP ()) with (ModP ())
-utest dtcMaxc (ModC ()) (ModC ()) with (ModC ())
-utest dtcMaxc (ModC ()) (ModM ()) with (ModC ())
+utest dtcLubc (ModA ()) (ModA ())   with (ModA ())
+utest dtcLubc (ModA ()) (ModPC ())  with (ModA ())
+utest dtcLubc (ModA ()) (ModP ())   with (ModA ())
+utest dtcLubc (ModA ()) (ModC ())   with (ModA ())
+utest dtcLubc (ModA ()) (ModM ())   with (ModA ())
 
-utest dtcMaxc (ModM ()) (ModA ()) with (ModA ())
-utest dtcMaxc (ModM ()) (ModP ()) with (ModP ())
-utest dtcMaxc (ModM ()) (ModC ()) with (ModC ())
-utest dtcMaxc (ModM ()) (ModM ()) with (ModM ())
+utest dtcLubc (ModPC ()) (ModA ())  with (ModA ())
+utest dtcLubc (ModPC ()) (ModPC ()) with (ModPC ())
+utest dtcLubc (ModPC ()) (ModP ())  with (ModPC ())
+utest dtcLubc (ModPC ()) (ModC ())  with (ModPC ())
+utest dtcLubc (ModPC ()) (ModM ())  with (ModPC ())
+
+utest dtcLubc (ModP ()) (ModA ())   with (ModA ())
+utest dtcLubc (ModP ()) (ModPC ())  with (ModPC ())
+utest dtcLubc (ModP ()) (ModP ())   with (ModP ())
+utest dtcLubc (ModP ()) (ModC ())   with (ModPC ())
+utest dtcLubc (ModP ()) (ModM ())   with (ModP ())
+
+utest dtcLubc (ModC ()) (ModA ())   with (ModA ())
+utest dtcLubc (ModC ()) (ModPC ())  with (ModPC ())
+utest dtcLubc (ModC ()) (ModP ())   with (ModPC ())
+utest dtcLubc (ModC ()) (ModC ())   with (ModC ())
+utest dtcLubc (ModC ()) (ModM ())   with (ModC ())
+
+utest dtcLubc (ModM ()) (ModA ())   with (ModA ())
+utest dtcLubc (ModM ()) (ModPC ())  with (ModPC ())
+utest dtcLubc (ModM ()) (ModP ())   with (ModP ())
+utest dtcLubc (ModM ()) (ModC ())   with (ModC ())
+utest dtcLubc (ModM ()) (ModM ())   with (ModM ())
 
 -- Multiplication over coeffects (c ⋅ c).
-let dtcMulc : DTCCoeffect -> DTCCoeffect -> DTCCoeffect = dtcMinc
+let dtcMulc : DTCCoeffect -> DTCCoeffect -> DTCCoeffect = dtcGlbc
 
 -- ┌───────────────┐
 -- │ Annotated AST │
@@ -220,15 +316,15 @@ lang DTCAstBase = Ast + Eq
   sem mulcType : DTCCoeffect -> Type -> Type
   sem mulcType c =| ty -> ty
 
-  -- Maximum coeffect modifier of type (types that do not represent vectors are
-  -- assumed to have `M` modifiers).
-  sem maxcType : Type -> DTCCoeffect
-  sem maxcType =| _ -> ModM ()
+  -- Least upper bound coeffect modifier of type (types that do not represent
+  -- vectors are assumed to have `M` modifiers).
+  sem lubcType : Type -> DTCCoeffect
+  sem lubcType =| _ -> ModM ()
 
-  -- Minimum coeffect modifier of type (types that do not represent vectors are
-  -- assumed to have `A` modifiers).
-  sem mincType : Type -> DTCCoeffect
-  sem mincType =| _ -> ModA ()
+  -- Greatest lower bound coeffect modifier of type (types that do not represent
+  -- vectors are assumed to have `A` modifiers).
+  sem glbcType : Type -> DTCCoeffect
+  sem glbcType =| _ -> ModA ()
 
   -- Drops decorations from types
   sem eraseDecorationsType : Type -> Type
@@ -354,10 +450,10 @@ lang DTCFloatTypeAst = DTCAstBase + FloatTypeAst + PrettyPrint
   sem mulcType c =
   | TyFloatC r -> TyFloatC { r with c = dtcMulc c r.c }
 
-  sem maxcType =
+  sem lubcType =
   | TyFloatC r -> r.c
 
-  sem mincType =
+  sem glbcType =
   | TyFloatC r -> r.c
 
   sem subtype =
@@ -365,11 +461,11 @@ lang DTCFloatTypeAst = DTCAstBase + FloatTypeAst + PrettyPrint
 
   sem joinType =
   | (TyFloatC l, TyFloatC r) ->
-    Some (if dtcLeqc r.c l.c then TyFloatC l else TyFloatC r)
+    Some (TyFloatC { l with c = dtcLubc l.c r.c })
 
   sem meetType =
   | (TyFloatC l, TyFloatC r) ->
-    Some (if dtcLeqc r.c l.c then TyFloatC r else TyFloatC l)
+    Some (TyFloatC { l with c = dtcGlbc l.c r.c })
 
   sem setC c =
   | TyFloatC r -> TyFloatC { r with c = c }
@@ -462,10 +558,10 @@ lang DTCFunTypeAst = DTCAstBase + FunTypeAst + PrettyPrint
   sem mulcType c =
   | TyArrowCE r -> TyArrowCE { r with c = dtcMulc c r.c }
 
-  sem maxcType =
+  sem lubcType =
   | TyArrowCE r -> r.c
 
-  sem mincType =
+  sem glbcType =
   | TyArrowCE r -> r.c
 
   sem subtype c =
@@ -482,20 +578,18 @@ lang DTCFunTypeAst = DTCAstBase + FunTypeAst + PrettyPrint
     optionBind (meetType (l.from, r.from)) (lam from.
       optionBind (joinType (l.to, r.to)) (lam to.
         Some
-          (TyArrowCE
-            (if and (dtcLeqc l.c r.c) (dtcLeqe l.e r.e) then
-              { r with from = from, to = to }
-             else { l with from = from, to = to }))))
+          (TyArrowCE { l with from = from, to = to,
+                       c = dtcLubc l.c r.c, e = dtcLube l.e r.e })))
+
 
   sem meetType =
   | (TyArrowCE l, TyArrowCE r) ->
     optionBind (joinType (l.from, r.from)) (lam from.
       optionBind (meetType (l.to, r.to)) (lam to.
         Some
-          (TyArrowCE
-            (if and (dtcLeqc l.c r.c) (dtcLeqe l.e r.e) then
-              { l with from = from, to = to }
-             else { r with from = from, to = to }))))
+          (TyArrowCE { l with from = from, to = to,
+                       c = dtcGlbc l.c r.c, e = dtcGlbe l.e r.e })))
+
   sem setC c =
   | TyArrowCE r -> TyArrowCE { r with c = c }
 
@@ -535,11 +629,11 @@ lang DTCSeqTypeAst = DTCAstBase + SeqTypeAst
   sem mulcType c =
   | ty & TySeq _ -> smap_Type_Type (mulcType c) ty
 
-  sem maxcType =
-  | TySeq r -> maxcType r.ty
+  sem lubcType =
+  | TySeq r -> lubcType r.ty
 
-  sem mincType =
-  | TySeq r -> mincType r.ty
+  sem glbcType =
+  | TySeq r -> glbcType r.ty
 
   sem subtype =
   | (TySeq l, TySeq r) -> subtype (l.ty, r.ty)
@@ -570,13 +664,13 @@ lang DTCRecordTypeAst = DTCAstBase + RecordTypeAst
   sem mulcType c =
   | ty & TyRecord _ -> smap_Type_Type (mulcType c) ty
 
-  sem maxcType =
+  sem lubcType =
   | ty & TyRecord _ ->
-    sfold_Type_Type (lam c. lam ty. dtcMaxc c (maxcType ty)) (ModM ()) ty
+    sfold_Type_Type (lam c. lam ty. dtcLubc c (lubcType ty)) (ModM ()) ty
 
-  sem mincType =
+  sem glbcType =
   | ty & (TyRecord _) ->
-    sfold_Type_Type (lam c. lam ty. dtcMinc c (mincType ty)) (ModA ()) ty
+    sfold_Type_Type (lam c. lam ty. dtcGlbc c (glbcType ty)) (ModA ()) ty
 
   sem subtype =
   | (TyRecord l, TyRecord r) ->
@@ -716,17 +810,15 @@ lang DTCEnv = DTCAst + PrettyPrint
   sem dtcEnvWeaken idents =| env ->
     mapFilterWithKey (lam ident. lam. setMem ident idents) env
 
-  -- Returns the minimum coeffect modifier of the type environment. I.e., the
-  -- maximum coeffect modifier `c` s.t. c ≤ Γ.
-  sem dtcEnvMinc : DTCEnv -> DTCCoeffect
-  sem dtcEnvMinc =| env ->
-    mapFoldWithKey (lam c. lam. lam ty. dtcMinc c (mincType ty)) (ModA ()) env
+  -- Returns the greatest lower bound of coeffect modifiers in the environment.
+  sem dtcEnvGlbc : DTCEnv -> DTCCoeffect
+  sem dtcEnvGlbc =| env ->
+    mapFoldWithKey (lam c. lam. lam ty. dtcGlbc c (glbcType ty)) (ModA ()) env
 
-  -- Returns the maximum coeffect modifier of the type environment. I.e., the
-  -- minumum coeffect modifier `c` s.t. Γ ≤ c.
-  sem dtcEnvMaxc : DTCEnv -> DTCCoeffect
-  sem dtcEnvMaxc =| env ->
-    mapFoldWithKey (lam c. lam. lam ty. dtcMaxc c (maxcType ty)) (ModM ()) env
+  -- Returns the least upper bound of coeffect modifiers in the environment.
+  sem dtcEnvLubc : DTCEnv -> DTCCoeffect
+  sem dtcEnvLubc =| env ->
+    mapFoldWithKey (lam c. lam. lam ty. dtcLubc c (lubcType ty)) (ModM ()) env
 
   -- String representation of the typing environment
   sem dtcEnvToString : DTCEnv -> String
@@ -864,7 +956,7 @@ lang DTCTypeOfBase = DTCTypeError + DTCEnv
   type ResultOk = {e : DTCEffect, ty : Type, fv : Set Name}
 
   sem weakenedMaxc : DTCEnv -> Set Name -> DTCCoeffect
-  sem weakenedMaxc env =| fv -> dtcEnvMaxc (dtcEnvWeaken fv env)
+  sem weakenedMaxc env =| fv -> dtcEnvLubc (dtcEnvWeaken fv env)
 
   sem promote : DTCEnv -> Set Name -> Type -> Type
   sem promote env =| fv -> let c = weakenedMaxc env fv in mulcType c
@@ -1117,7 +1209,7 @@ lang DTCTypeOfAssume = Assume + DTCTypeOfBase
   | TmAssume r ->
     result.bind (typeOfH env r.dist) (lam dist.
       match dist with {ty = TyDist distr} then
-        let c = dtcEnvMaxc (dtcEnvWeaken dist.fv env) in
+        let c = dtcEnvLubc (dtcEnvWeaken dist.fv env) in
         result.ok { dist with e = ModR (), ty = mulcType c distr.ty }
       else
         result.err
@@ -1254,7 +1346,7 @@ lang DTCTypeOfSolveODE = SolveODE + IsIsomorficToRn + DTCTypeOfBase
               TyArrowCE {
                 arr1 with to = tyarrowce_ yTy yTy (ModA ()) (ModD ()) }
             in
-            let x1Ty = mulcType (ModP ()) xTy in
+            let x1Ty = mulcType (ModPC ()) xTy in
             let fv =
               foldr1 setUnion [method.fv, model.fv, init.fv, x1.fv]
             in
@@ -1643,12 +1735,13 @@ use TestLang in
 
 -- Define some shorthand names.
 
-let _D = ModD () in
-let _R = ModR () in
-let _A = ModA () in
-let _P = ModP () in
-let _C = ModC () in
-let _M = ModM () in
+let _D  = ModD () in
+let _R  = ModR () in
+let _A  = ModA () in
+let _PC = ModPC () in
+let _P  = ModP () in
+let _C  = ModC () in
+let _M  = ModM () in
 
 let _x = nameNoSym "x" in
 let _y = nameNoSym "y" in
@@ -1664,6 +1757,8 @@ let alltypes = [
   tyfloatc_ _A, tyfloatc_ _P, tyfloatc_ _M,
   tyarrowce_ (tyfloatc_ _A) (tyfloatc_ _A) _A _D,
   tyarrowce_ (tyfloatc_ _A) (tyfloatc_ _A) _A _R,
+  tyarrowce_ (tyfloatc_ _A) (tyfloatc_ _A) _PC _D,
+  tyarrowce_ (tyfloatc_ _A) (tyfloatc_ _A) _PC _R,
   tyarrowce_ (tyfloatc_ _A) (tyfloatc_ _A) _P _D,
   tyarrowce_ (tyfloatc_ _A) (tyfloatc_ _A) _P _R,
   tyarrowce_ (tyfloatc_ _A) (tyfloatc_ _A) _C _D,
@@ -1705,6 +1800,7 @@ let rhs = tytuple_ [
   tyarrowce_ (tyfloatc_ _A) (tyfloatc_ _A) _A _D
 ] in
 utest leqcType _A rhs with false in
+utest leqcType _PC rhs with false in
 utest leqcType _P rhs with false in
 utest leqcType _C rhs with false in
 utest leqcType _M rhs with true in
@@ -1723,6 +1819,7 @@ let rhs = tytuple_ [
   tyarrowce_ (tyfloatc_ _A) (tyfloatc_ _A) _A _D
 ] in
 utest eqcType _A rhs with false in
+utest eqcType _PC rhs with false in
 utest eqcType _P rhs with false in
 utest eqcType _C rhs with false in
 utest eqcType _M rhs with false in
@@ -1732,6 +1829,7 @@ let rhs = lam c. tytuple_ [
 ] in
 utest eqcType _A (rhs _A) with true in
 utest eqcType _P (rhs _A) with false in
+utest eqcType _PC (rhs _PC) with true in
 utest eqcType _C (rhs _A) with false in
 utest eqcType _M (rhs _A) with false in
 utest eqcType _A (rhs _P) with false in
@@ -1744,6 +1842,7 @@ let rhs = tytuple_ [
   tyarrowce_ (tyfloatc_ _A) (tyfloatc_ _A) _M _D
 ] in
 utest eqcType _A rhs with false in
+utest eqcType _PC rhs with false in
 utest eqcType _P rhs with false in
 utest eqcType _C rhs with false in
 utest eqcType _M rhs with true in
@@ -1762,7 +1861,8 @@ let rhs = tytuple_ [
   tyarrowce_ (tyfloatc_ _A) (tyfloatc_ _A) _P _D
 ] in
 utest leqTypec rhs _A with true in
-utest leqTypec rhs _P with true in
+utest leqTypec rhs _PC with true in
+utest leqTypec rhs _P with false in
 utest leqTypec rhs _C with false in
 utest leqTypec rhs _M with false in
 
@@ -1774,6 +1874,7 @@ utest dtcLeqcEnv _A (dtcEnvOfSeq []) with true in
 utest dtcLeqcEnv _A (dtcEnvOfSeq [(_x, tyfloatc_ _A)]) with true in
 let env = dtcEnvOfSeq [(_x, tyfloatc_ _P), (_y, tyfloatc_ _M)] in
 utest dtcLeqcEnv _A env with false in
+utest dtcLeqcEnv _PC env with false in
 utest dtcLeqcEnv _P env with false in
 utest dtcLeqcEnv _M env with true in
 utest
@@ -1789,8 +1890,8 @@ in
 utest mulcType _A (tyfloatc_ _A) with tyfloatc_ _A using eqType in
 utest mulcType _A (tyfloatc_ _P) with tyfloatc_ _P using eqType in
 utest mulcType _P (tyfloatc_ _A) with tyfloatc_ _P using eqType in
-utest mulcType _C (tyfloatc_ _P) with tyfloatc_ _C using eqType in
-utest mulcType _P (tyfloatc_ _C) with tyfloatc_ _C using eqType in
+utest mulcType _C (tyfloatc_ _P) with tyfloatc_ _M using eqType in
+utest mulcType _P (tyfloatc_ _C) with tyfloatc_ _M using eqType in
 utest mulcType _M (tyarrowce_ (tyfloatc_ _A) (tyfloatc_ _A) _A _D) with
   tyarrowce_ (tyfloatc_ _A) (tyfloatc_ _A) _M _D using eqType
 in
@@ -1821,21 +1922,31 @@ let _subtype = lam c1. lam c2.
 in
 
 utest _subtype _A _A with true in
+utest _subtype _A _PC with false in
 utest _subtype _A _P with false in
 utest _subtype _A _C with false in
 utest _subtype _A _M with false in
 
+utest _subtype _PC _A with true in
+utest _subtype _PC _PC with true in
+utest _subtype _PC _P with false in
+utest _subtype _PC _C with false in
+utest _subtype _PC _M with false in
+
 utest _subtype _P _A with true in
+utest _subtype _P _PC with true in
 utest _subtype _P _P with true in
 utest _subtype _P _C with false in
 utest _subtype _P _M with false in
 
 utest _subtype _C _A with true in
-utest _subtype _C _P with true in
+utest _subtype _C _PC with true in
+utest _subtype _C _P with false in
 utest _subtype _C _C with true in
 utest _subtype _C _M with false in
 
 utest _subtype _M _A with true in
+utest _subtype _M _PC with true in
 utest _subtype _M _P with true in
 utest _subtype _M _C with true in
 utest _subtype _M _M with true in
@@ -1874,21 +1985,31 @@ let arr = lam c.
 in
 
 utest subtype (arr _A, arr _A) with true in
+utest subtype (arr _PC, arr _A) with true in
 utest subtype (arr _P, arr _A) with true in
 utest subtype (arr _C, arr _A) with true in
 utest subtype (arr _M, arr _A) with true in
 
+utest subtype (arr _A, arr _PC) with false in
+utest subtype (arr _PC, arr _PC) with true in
+utest subtype (arr _P, arr _PC) with true in
+utest subtype (arr _C, arr _PC) with true in
+utest subtype (arr _M, arr _PC) with true in
+
 utest subtype (arr _A, arr _P) with false in
+utest subtype (arr _PC, arr _P) with false in
 utest subtype (arr _P, arr _P) with true in
-utest subtype (arr _C, arr _P) with true in
+utest subtype (arr _C, arr _P) with false in
 utest subtype (arr _M, arr _P) with true in
 
 utest subtype (arr _A, arr _C) with false in
+utest subtype (arr _PC, arr _C) with false in
 utest subtype (arr _P, arr _C) with false in
 utest subtype (arr _C, arr _C) with true in
 utest subtype (arr _M, arr _C) with true in
 
 utest subtype (arr _A, arr _M) with false in
+utest subtype (arr _PC, arr _M) with false in
 utest subtype (arr _P, arr _M) with false in
 utest subtype (arr _C, arr _M) with false in
 utest subtype (arr _M, arr _M) with true in
@@ -1924,41 +2045,57 @@ utest meetType (tybot_, tybot_) with (Some tybot_) using eq in
 -- Base types
 let _joinType = lam c1. lam c2. joinType (tyfloatc_ c1, tyfloatc_ c2) in
 
-utest _joinType _A _A with Some (tyfloatc_ _A) using eq in
-utest _joinType _A _P with Some (tyfloatc_ _A) using eq in
-utest _joinType _P _A with Some (tyfloatc_ _A) using eq in
-utest _joinType _C _A with Some (tyfloatc_ _A) using eq in
-utest _joinType _A _C with Some (tyfloatc_ _A) using eq in
-utest _joinType _A _M with Some (tyfloatc_ _A) using eq in
-utest _joinType _M _A with Some (tyfloatc_ _A) using eq in
-utest _joinType _P _P with Some (tyfloatc_ _P) using eq in
-utest _joinType _P _C with Some (tyfloatc_ _P) using eq in
-utest _joinType _C _P with Some (tyfloatc_ _P) using eq in
-utest _joinType _P _M with Some (tyfloatc_ _P) using eq in
-utest _joinType _M _P with Some (tyfloatc_ _P) using eq in
-utest _joinType _C _C with Some (tyfloatc_ _C) using eq in
-utest _joinType _C _M with Some (tyfloatc_ _C) using eq in
-utest _joinType _M _C with Some (tyfloatc_ _C) using eq in
-utest _joinType _M _M with Some (tyfloatc_ _M) using eq in
+utest _joinType _A _A  with Some (tyfloatc_ _A)  using eq in
+utest _joinType _A _PC with Some (tyfloatc_ _A)  using eq in
+utest _joinType _PC _A with Some (tyfloatc_ _A)  using eq in
+utest _joinType _A _P  with Some (tyfloatc_ _A)  using eq in
+utest _joinType _P _A  with Some (tyfloatc_ _A)  using eq in
+utest _joinType _C _A  with Some (tyfloatc_ _A)  using eq in
+utest _joinType _A _C  with Some (tyfloatc_ _A)  using eq in
+utest _joinType _A _M  with Some (tyfloatc_ _A)  using eq in
+utest _joinType _M _A  with Some (tyfloatc_ _A)  using eq in
+utest _joinType _PC _P with Some (tyfloatc_ _PC) using eq in
+utest _joinType _P _PC with Some (tyfloatc_ _PC) using eq in
+utest _joinType _PC _C with Some (tyfloatc_ _PC) using eq in
+utest _joinType _C _PC with Some (tyfloatc_ _PC) using eq in
+utest _joinType _PC _M with Some (tyfloatc_ _PC) using eq in
+utest _joinType _M _PC with Some (tyfloatc_ _PC) using eq in
+utest _joinType _P _P  with Some (tyfloatc_ _P)  using eq in
+utest _joinType _P _C  with Some (tyfloatc_ _PC) using eq in
+utest _joinType _C _P  with Some (tyfloatc_ _PC) using eq in
+utest _joinType _P _M  with Some (tyfloatc_ _P)  using eq in
+utest _joinType _M _P  with Some (tyfloatc_ _P)  using eq in
+utest _joinType _C _C  with Some (tyfloatc_ _C)  using eq in
+utest _joinType _C _M  with Some (tyfloatc_ _C)  using eq in
+utest _joinType _M _C  with Some (tyfloatc_ _C)  using eq in
+utest _joinType _M _M  with Some (tyfloatc_ _M)  using eq in
 
 let _meetType = lam c1. lam c2. meetType (tyfloatc_ c1, tyfloatc_ c2) in
 
-utest _meetType _A _A with Some (tyfloatc_ _A) using eq in
-utest _meetType _A _P with Some (tyfloatc_ _P) using eq in
-utest _meetType _P _A with Some (tyfloatc_ _P) using eq in
-utest _meetType _C _A with Some (tyfloatc_ _C) using eq in
-utest _meetType _A _C with Some (tyfloatc_ _C) using eq in
-utest _meetType _A _M with Some (tyfloatc_ _M) using eq in
-utest _meetType _M _A with Some (tyfloatc_ _M) using eq in
-utest _meetType _P _P with Some (tyfloatc_ _P) using eq in
-utest _meetType _P _C with Some (tyfloatc_ _C) using eq in
-utest _meetType _C _P with Some (tyfloatc_ _C) using eq in
-utest _meetType _P _M with Some (tyfloatc_ _M) using eq in
-utest _meetType _M _P with Some (tyfloatc_ _M) using eq in
-utest _meetType _C _C with Some (tyfloatc_ _C) using eq in
-utest _meetType _C _M with Some (tyfloatc_ _M) using eq in
-utest _meetType _M _C with Some (tyfloatc_ _M) using eq in
-utest _meetType _M _M with Some (tyfloatc_ _M) using eq in
+utest _meetType _A _A  with Some (tyfloatc_ _A)  using eq in
+utest _meetType _A _PC with Some (tyfloatc_ _PC) using eq in
+utest _meetType _PC _A with Some (tyfloatc_ _PC) using eq in
+utest _meetType _A _P  with Some (tyfloatc_ _P)  using eq in
+utest _meetType _P _A  with Some (tyfloatc_ _P)  using eq in
+utest _meetType _C _A  with Some (tyfloatc_ _C)  using eq in
+utest _meetType _A _C  with Some (tyfloatc_ _C)  using eq in
+utest _meetType _A _M  with Some (tyfloatc_ _M)  using eq in
+utest _meetType _M _A  with Some (tyfloatc_ _M)  using eq in
+utest _meetType _PC _P with Some (tyfloatc_ _P)  using eq in
+utest _meetType _P _PC with Some (tyfloatc_ _P)  using eq in
+utest _meetType _PC _C with Some (tyfloatc_ _C)  using eq in
+utest _meetType _C _PC with Some (tyfloatc_ _C)  using eq in
+utest _meetType _PC _M with Some (tyfloatc_ _M)  using eq in
+utest _meetType _M _PC with Some (tyfloatc_ _M)  using eq in
+utest _meetType _P _P  with Some (tyfloatc_ _P)  using eq in
+utest _meetType _P _C  with Some (tyfloatc_ _M) using eq in
+utest _meetType _C _P  with Some (tyfloatc_ _M) using eq in
+utest _meetType _P _M  with Some (tyfloatc_ _M)  using eq in
+utest _meetType _M _P  with Some (tyfloatc_ _M)  using eq in
+utest _meetType _C _C  with Some (tyfloatc_ _C)  using eq in
+utest _meetType _C _M  with Some (tyfloatc_ _M)  using eq in
+utest _meetType _M _C  with Some (tyfloatc_ _M)  using eq in
+utest _meetType _M _M  with Some (tyfloatc_ _M)  using eq in
 
 -- Sequences
 let seq = lam c. tyseq_ (tyfloatc_ c) in
@@ -2031,41 +2168,59 @@ utest _meetType _P _A with Some (arr _P) using eq in
 let arr = lam c. tyarrowce_ (tyfloatc_ _A) (tyfloatc_ _A) c _D in
 let _joinType = lam c1. lam c2. joinType (arr c1, arr c2) in
 
-utest _joinType _A _A with Some (arr _A) using eq in
-utest _joinType _A _P with Some (arr _A) using eq in
-utest _joinType _P _A with Some (arr _A) using eq in
-utest _joinType _A _C with Some (arr _A) using eq in
-utest _joinType _C _A with Some (arr _A) using eq in
-utest _joinType _A _M with Some (arr _A) using eq in
-utest _joinType _M _A with Some (arr _A) using eq in
-utest _joinType _P _P with Some (arr _P) using eq in
-utest _joinType _P _C with Some (arr _P) using eq in
-utest _joinType _C _P with Some (arr _P) using eq in
-utest _joinType _P _M with Some (arr _P) using eq in
-utest _joinType _M _P with Some (arr _P) using eq in
-utest _joinType _C _C with Some (arr _C) using eq in
-utest _joinType _C _M with Some (arr _C) using eq in
-utest _joinType _M _C with Some (arr _C) using eq in
-utest _joinType _M _M with Some (arr _M) using eq in
+utest _joinType _A _A   with Some (arr _A)  using eq in
+utest _joinType _A _PC  with Some (arr _A)  using eq in
+utest _joinType _PC _A  with Some (arr _A)  using eq in
+utest _joinType _A _P   with Some (arr _A)  using eq in
+utest _joinType _P _A   with Some (arr _A)  using eq in
+utest _joinType _A _C   with Some (arr _A)  using eq in
+utest _joinType _C _A   with Some (arr _A)  using eq in
+utest _joinType _A _M   with Some (arr _A)  using eq in
+utest _joinType _M _A   with Some (arr _A)  using eq in
+utest _joinType _PC _PC with Some (arr _PC) using eq in
+utest _joinType _PC _P  with Some (arr _PC) using eq in
+utest _joinType _P _PC  with Some (arr _PC) using eq in
+utest _joinType _PC _C  with Some (arr _PC) using eq in
+utest _joinType _C _PC  with Some (arr _PC) using eq in
+utest _joinType _PC _M  with Some (arr _PC) using eq in
+utest _joinType _M _PC  with Some (arr _PC) using eq in
+utest _joinType _P _P   with Some (arr _P)  using eq in
+utest _joinType _P _C   with Some (arr _PC) using eq in
+utest _joinType _C _P   with Some (arr _PC) using eq in
+utest _joinType _P _M   with Some (arr _P)  using eq in
+utest _joinType _M _P   with Some (arr _P)  using eq in
+utest _joinType _C _C   with Some (arr _C)  using eq in
+utest _joinType _C _M   with Some (arr _C)  using eq in
+utest _joinType _M _C   with Some (arr _C)  using eq in
+utest _joinType _M _M   with Some (arr _M)  using eq in
 
 let _meetType = lam c1. lam c2. meetType (arr c1, arr c2) in
 
-utest _meetType _A _A with Some (arr _A) using eq in
-utest _meetType _A _P with Some (arr _P) using eq in
-utest _meetType _P _A with Some (arr _P) using eq in
-utest _meetType _A _C with Some (arr _C) using eq in
-utest _meetType _C _A with Some (arr _C) using eq in
-utest _meetType _A _M with Some (arr _M) using eq in
-utest _meetType _M _A with Some (arr _M) using eq in
-utest _meetType _P _P with Some (arr _P) using eq in
-utest _meetType _P _C with Some (arr _C) using eq in
-utest _meetType _C _P with Some (arr _C) using eq in
-utest _meetType _P _M with Some (arr _M) using eq in
-utest _meetType _M _P with Some (arr _M) using eq in
-utest _meetType _C _C with Some (arr _C) using eq in
-utest _meetType _C _M with Some (arr _M) using eq in
-utest _meetType _M _C with Some (arr _M) using eq in
-utest _meetType _M _M with Some (arr _M) using eq in
+utest _meetType _A _A   with Some (arr _A)  using eq in
+utest _meetType _A _PC  with Some (arr _PC) using eq in
+utest _meetType _PC _A  with Some (arr _PC) using eq in
+utest _meetType _A _P   with Some (arr _P)  using eq in
+utest _meetType _P _A   with Some (arr _P)  using eq in
+utest _meetType _A _C   with Some (arr _C)  using eq in
+utest _meetType _C _A   with Some (arr _C)  using eq in
+utest _meetType _A _M   with Some (arr _M)  using eq in
+utest _meetType _M _A   with Some (arr _M)  using eq in
+utest _meetType _PC _PC with Some (arr _PC) using eq in
+utest _meetType _PC _P  with Some (arr _P)  using eq in
+utest _meetType _P _PC  with Some (arr _P)  using eq in
+utest _meetType _PC _C  with Some (arr _C)  using eq in
+utest _meetType _C _PC  with Some (arr _C)  using eq in
+utest _meetType _PC _M  with Some (arr _M)  using eq in
+utest _meetType _M _PC  with Some (arr _M)  using eq in
+utest _meetType _P _P   with Some (arr _P)  using eq in
+utest _meetType _P _C   with Some (arr _M)  using eq in
+utest _meetType _C _P   with Some (arr _M)  using eq in
+utest _meetType _P _M   with Some (arr _M)  using eq in
+utest _meetType _M _P   with Some (arr _M)  using eq in
+utest _meetType _C _C   with Some (arr _C)  using eq in
+utest _meetType _C _M   with Some (arr _M)  using eq in
+utest _meetType _M _C   with Some (arr _M)  using eq in
+utest _meetType _M _M   with Some (arr _M)  using eq in
 
 -- Type variables
 utest joinType (tyvar_ "X", tyvar_ "X") with Some (tyvar_ "X") using eq in
@@ -2085,59 +2240,60 @@ utest meetType (dist _A, dist _P) with Some (dist _P) using eq in
 utest meetType (dist _P, dist _A) with Some (dist _P) using eq in
 
 -- ┌───────────────┐
--- │ Test mincType │
+-- │ Test glbcType │
 -- └───────────────┘
 
 -- Bottom
-utest mincType tybot_ with _A in
+utest glbcType tybot_ with _A in
 
 -- Float
-let _mincType = lam c. mincType (tyfloatc_ c) in
+let _glbcType = lam c. glbcType (tyfloatc_ c) in
 
-utest _mincType _A with _A in
-utest _mincType _M with _M in
+utest _glbcType _A with _A in
+utest _glbcType _M with _M in
 
 -- Seqences
-let _mincType = lam c. mincType (tyseq_ (tyfloatc_ c)) in
+let _glbcType = lam c. glbcType (tyseq_ (tyfloatc_ c)) in
 
-utest _mincType _A with _A in
-utest _mincType _M with _M in
+utest _glbcType _A with _A in
+utest _glbcType _M with _M in
 
 -- Records
-let _mincType = lam c1. lam c2. mincType (tytuple_ [tyfloatc_ c1, tyfloatc_ c2]) in
+let _glbcType = lam c1. lam c2. glbcType (tytuple_ [tyfloatc_ c1, tyfloatc_ c2]) in
 
-utest _mincType _A _A with _A in
-utest _mincType _A _P with _P in
-utest _mincType _P _A with _P in
+utest _glbcType _A _A with _A in
+utest _glbcType _A _P with _P in
+utest _glbcType _P _A with _P in
 
 -- Arrows
-let _mincType = lam c1. lam c2.
-  mincType (tyarrowce_ (tyfloatc_ c1) (tyfloatc_ c2) _A _D)
+let _glbcType = lam c1. lam c2.
+  glbcType (tyarrowce_ (tyfloatc_ c1) (tyfloatc_ c2) _A _D)
 in
 
-utest _mincType _A _A with _A in
-utest _mincType _A _P with _A in
-utest _mincType _P _A with _A in
+utest _glbcType _A _A with _A in
+utest _glbcType _A _P with _A in
+utest _glbcType _P _A with _A in
 
 -- Type variables
-utest mincType (tyvar_ "X") with _A in
+utest glbcType (tyvar_ "X") with _A in
 
 -- Distributions
-let _mincType = lam c. mincType (tydist_ (tyfloatc_ c)) in
+let _glbcType = lam c. glbcType (tydist_ (tyfloatc_ c)) in
 
-utest _mincType _A with _A in
-utest _mincType _M with _A in
+utest _glbcType _A with _A in
+utest _glbcType _M with _A in
 
 -- ┌────────────────────────────┐
--- │ Test dtcEnvMinc/dtcEnvMaxc │
+-- │ Test dtcEnvGlbc/dtcEnvLubc │
 -- └────────────────────────────┘
 
 let genC = lam.
-  switch randIntU 0 4
+  switch randIntU 0 5
   case 0 then ModA ()
-  case 1 then ModP ()
-  case 2 then ModC ()
-  case 3 then ModM ()
+  case 1 then ModPC ()
+  case 2 then ModP ()
+  case 3 then ModC ()
+  case 4 then ModM ()
   end
 in
 
@@ -2153,8 +2309,8 @@ in
 
 repeat
   (lam. let env = genEnv () in
-      let minc = dtcEnvMinc env in
-      let maxc = dtcEnvMaxc env in
+      let minc = dtcEnvGlbc env in
+      let maxc = dtcEnvLubc env in
       -- Exit on first failing test
       let onFail = lam. lam.
         error (strJoin "\n" [
@@ -2806,7 +2962,7 @@ in
 
 utest
   _test _P _A _C _A _D
-  with Right (_D, flt _A)
+  with Left [DTCArgError (NoInfo (), None ())]
   using eq else onFail
 in
 
