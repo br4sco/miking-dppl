@@ -18,6 +18,7 @@ use TestLang in
 let _D = ModD () in
 let _R = ModR () in
 let _A = ModA () in
+let _PC = ModPC () in
 let _P = ModP () in
 let _C = ModC () in
 let _M = ModM () in
@@ -118,6 +119,26 @@ utest _typeOf env (strJoin "\n" [
 let env = [] in
 utest _typeOf env "lam x : FloatA. addf 1. 1."
   with Right (_D, arrc [(flt _A, _M)] (flt _M))
+  using eq else onFail in
+
+let env = [] in
+utest _typeOf env "lam x : FloatP. if gtf x 0. then 1. else 2."
+  with Right (_D, arrc [(flt _P, _M)] (flt _P))
+  using eq else onFail in
+
+let env = [ (nameNoSym "y", flt _C) ] in
+utest _typeOf env "lam x : FloatP. if gtf x 0. then x else y"
+  with Right (_D, arrc [(flt _P, _C)] (flt _PC))
+  using eq else onFail in
+
+let env = [] in
+utest _typeOf env "lam x : FloatPC. if gtf x 0. then x else 2."
+  with Left [DTCArgError (fi 1 24 1 25, None ())]
+  using eq else onFail in
+
+let env = [] in
+utest _typeOf env "lam x : FloatM. if gtf x 0. then x else 2."
+  with Right (_D, arrc [(flt _M, _M)] (flt _M))
   using eq else onFail in
 
 let env = [

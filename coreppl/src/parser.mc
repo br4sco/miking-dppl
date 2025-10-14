@@ -298,6 +298,7 @@ lang DPPLParser =
   | "ModM" -> Some(1, lam seq. TyModC { c = ModM (), info = info, ty = get seq 0 })
   | "ModR" -> Some(1, lam seq. TyModE { e = ModR (), info = info, ty = get seq 0 })
   | "FloatA" -> Some(0, lam seq. TyFloatC { info = info, c = ModA () })
+  | "FloatPC" -> Some(0, lam seq. TyFloatC { info = info, c = ModPC () })
   | "FloatP" -> Some(0, lam seq. TyFloatC { info = info, c = ModP () })
   | "FloatC" -> Some(0, lam seq. TyFloatC { info = info, c = ModC () })
   | "FloatM" -> Some(0, lam seq. TyFloatC { info = info, c = ModM () })

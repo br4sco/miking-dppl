@@ -366,6 +366,12 @@ lang DTCAstBase = Ast + Eq
   -- Sets the coeffects modifier on a type.
   sem setC : DTCCoeffect -> Type -> Type
   sem setC c =| ty -> smap_Type_Type (setC c) ty
+
+  -- Is this typem forst order. Defaults to true so higher order types should
+  -- extend this.
+  sem isFirstOrder : Type -> Bool
+  sem isFirstOrder =| ty ->
+    sfold_Type_Type (lam acc. lam ty. and acc (isFirstOrder ty)) true ty
 end
 
 lang DTCBottomTypeAst = DTCAstBase + UnknownTypeAst + PrettyPrint
@@ -419,6 +425,7 @@ lang DTCFloatTypeAst = DTCAstBase + FloatTypeAst + PrettyPrint
   sem typePrecedence = | TyFloatC _ -> 1
   sem getTypeStringCode (indent : Int) (env: PprintEnv) =
   | TyFloatC (r & {c = ModA _}) -> (env, "FloatA")
+  | TyFloatC (r & {c = ModPC _}) -> (env, "FloatPC")
   | TyFloatC (r & {c = ModP _}) -> (env, "FloatP")
   | TyFloatC (r & {c = ModC _}) -> (env, "FloatC")
   | TyFloatC (r & {c = ModM _}) -> (env, "FloatM")
@@ -592,6 +599,9 @@ lang DTCFunTypeAst = DTCAstBase + FunTypeAst + PrettyPrint
 
   sem setC c =
   | TyArrowCE r -> TyArrowCE { r with c = c }
+
+  sem isFirstOrder =
+  | TyArrowCE r -> false
 
   -- This function uncurries a term by multiplying the coeffects on the arrow
   -- types. This is helpful when typechecking higher-order terms and intrinsics.
@@ -848,6 +858,8 @@ lang DTCTypeError = Ast + DTCEnv + DTCFloatTypeAst + PrettyPrint
   | DTCUnuspportedTermError (Info, Option Expr)
   | DTCInvalidContextError (Info, Option (Name))
   | DTCContextConstraintError (Info, Option (DTCCoeffect,  DTCEnv))
+  | DTCHigherOrderTypeError (Info, Option Type)
+  | DTCTypeConstraintErrorR (Info, Option (DTCCoeffect, Type))
 
   sem typeErrorInfo : DTCTypeError -> Info
   sem typeErrorInfo =
@@ -863,6 +875,8 @@ lang DTCTypeError = Ast + DTCEnv + DTCFloatTypeAst + PrettyPrint
   | DTCUnuspportedTermError (i, _) -> i
   | DTCInvalidContextError (i, _)
   | DTCContextConstraintError (i, _) -> i
+  | DTCHigherOrderTypeError (i, _) -> i
+  | DTCTypeConstraintErrorR (i, _) -> i
 
   sem typeErrorToString : DTCTypeError -> String
   sem typeErrorToString =
@@ -878,6 +892,8 @@ lang DTCTypeError = Ast + DTCEnv + DTCFloatTypeAst + PrettyPrint
   | DTCUnuspportedTermError _ -> "UnuspportedTermError"
   | DTCInvalidContextError _ -> "InvalidContextError"
   | DTCContextConstraintError _ -> "ContextConstraintError"
+  | DTCHigherOrderTypeError _ -> "HigherOrderTypeError"
+  | DTCTypeConstraintErrorR _ -> "TypeConstraintErrorR"
 
   sem typeErrorToMsg : DTCTypeError -> (Info, String)
   sem typeErrorToMsg =| err ->
@@ -938,6 +954,18 @@ lang DTCTypeError = Ast + DTCEnv + DTCFloatTypeAst + PrettyPrint
     (info, join [
       "* The type context ", dtcEnvToString env, "\n",
       "* is not less than or equal to ", dtcCoeffectToString c
+    ])
+  | DTCHigherOrderTypeError (info, Some ty) ->
+    (info, join [
+      "* A higher order type is not allowed here but got:\n",
+      type2str ty
+    ])
+  | DTCTypeConstraintErrorR (info, Some (c, ty)) ->
+    (info, join [
+      "* Type constriant error: ",
+      dtcCoeffectToString c, " ≤ ",
+      type2str ty,
+      " does not hold."
     ])
   | err -> (typeErrorInfo err, "* No error message")
 
@@ -1158,7 +1186,7 @@ end
 
 lang DTCTypeOfMatch = MatchAst + DTCPatTypeCheck + DTCTypeOfBase
   sem typeOfH env =
-  | TmMatch r ->
+  | TmMatch (r & {els = TmNever _}) ->
     result.bind (typeOfHPromote env r.target) (lam target.
       result.bind
         (dtcTypeCheckPat env (mapEmpty nameCmp) (target.ty, r.pat))
@@ -1172,9 +1200,42 @@ lang DTCTypeOfMatch = MatchAst + DTCPatTypeCheck + DTCTypeOfBase
                   resultOK [target.e, thn.e, els.e] ty [
                     target.fv,
                     setSubtract thn.fv (setOfKeys patEnv),
-                    els.fv
-                  ])
+                    els.fv ])
                 (joinType (thn.ty, els.ty)))))
+  | TmMatch r -> typeOfBoolStrict env r
+
+  -- NOTE(oerikss, 2025-10-14): We need stricter typing if it is possible that
+  -- the match includes a condition on floating point values.
+  sem typeOfBoolStrict env =
+  | r ->
+    result.bind (typeOfHPromote env r.target) (lam target.
+      result.bind
+        (dtcTypeCheckPat env (mapEmpty nameCmp) (target.ty, r.pat))
+        (lam patEnv.
+          let thnEnv = dtcEnvBatchInsert patEnv env in
+          result.bind2 (typeOfHPromote thnEnv r.thn) (typeOfHPromote env r.els)
+            (lam thn. lam els.
+              if isFirstOrder thn.ty then
+                if isFirstOrder els.ty then
+                  optionMapOr
+                    (result.err (DTCJoinError (r.info, Some (thn.ty, els.ty))))
+                    (lam ty.
+                      let tyP = setC (ModP ()) ty in
+                      optionMapOr
+                        (result.err (DTCJoinError (r.info, Some (tyP, ty))))
+                        (lam ty.
+                          resultOK [target.e, thn.e, els.e] ty [
+                            target.fv,
+                            setSubtract thn.fv (setOfKeys patEnv),
+                            els.fv ])
+                        (joinType (ty, tyP)))
+                    (joinType (thn.ty, els.ty))
+                else
+                  result.err
+                    (DTCHigherOrderTypeError (infoTm r.els, Some els.ty))
+              else
+                result.err
+                  (DTCHigherOrderTypeError (infoTm r.thn, Some thn.ty)))))
 end
 
 lang DTCTypeOfInfer = Infer + DTCTypeOfBase
@@ -1403,10 +1464,16 @@ end
 
 lang DTCArithFloatType = ArithFloatAst + DTCTyConst
   sem dtcConstType info =
-  | CAddf _ | CSubf _ | CMulf _ | CDivf _ ->
+  | CAddf _ | CSubf _ | CMulf _ ->
     let tyfloata = ityfloatc_ info (ModA ()) in
     let arr = lam from. lam to. iarr_ info from to in
     result.ok (arr tyfloata (arr tyfloata tyfloata))
+  | CDivf _ ->
+      let tyfloata = lam c. ityfloatc_ info c in
+      let arr = lam from. lam to. iarr_ info from to in
+      result.ok
+        (arr (tyfloata (ModA ()))
+           (arr (tyfloata (ModP ())) (tyfloata (ModA ()))))
   | CNegf _ ->
     let tyfloata = ityfloatc_ info (ModA ()) in
     result.ok (iarr_ info tyfloata tyfloata)
@@ -1414,11 +1481,11 @@ end
 
 lang DTCElementaryFunctionsType = ElementaryFunctions + DTCTyConst
   sem dtcConstType info =
-  | CSin _ | CCos _ | CSqrt _  | CExp _ | CLog _ ->
+  | CSin _ | CCos _ | CExp _ ->
     let tyfloata = ityfloatc_ info (ModA ()) in
     result.ok (iarr_ info tyfloata tyfloata)
-  | CAbsf _ ->
-    let tyfloata = ityfloatc_ info (ModP ()) in
+   | CLog _ | CSqrt _  | CAbsf _ ->
+    let tyfloata = ityfloatc_ info (ModPC ()) in
     result.ok (iarr_ info tyfloata tyfloata)
   | CPow _ ->
     let tyfloata = ityfloatc_ info (ModA ()) in
@@ -2588,7 +2655,7 @@ utest
   let f = nvar_ _f in
   let g = nvar_ _g in
   _typeOf env (match_ f pvarw_ f g)
-  with Right (_D, arrce [(flt _P, _P, _R), (flt _M, _A, _D)] (flt _A))
+  with Left [DTCHigherOrderTypeError (NoInfo (), None ())]
   using eq else onFail
 in
 
