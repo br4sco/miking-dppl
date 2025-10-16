@@ -1,7 +1,8 @@
 include "./ode-and-data.mc"
 include "./bayesian-regression-model.mc"
 
-let z = lam #var"θ" : FloatA. map (lam x : FloatP. g (y #var"θ" (x0, y0) x)) times
+let z = lam #var"θ" : FloatP.
+  map (lam x : FloatP. g (y #var"θ" (x0, y0) x)) times
 -- let z = lam #var"θ" : FloatA. map g (trace (y #var"θ") (x0, y0) times) -- slightly faster
 let #var"Dist_θ" = infer (APF { particles = 5000 }) (regressionModel data z)
 
