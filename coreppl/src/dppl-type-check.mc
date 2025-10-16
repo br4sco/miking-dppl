@@ -1245,24 +1245,22 @@ lang DTCTypeOfInfer = Infer + DTCTypeOfBase
       (inferSfold_Expr_Expr
          (foldTypeOfH env)
          (result.ok { e = ModD (), fv = setEmpty nameCmp }) r.method)
-      (typeOfH env r.model)
+      (typeOfHPromote env r.model)
       (lam method. lam model.
-        let wenv = dtcEnvWeaken model.fv env in
-        if dtcLeqEnvc wenv (ModM ()) then
-          let err =
-            argErr r.model
-              (tyarrowce_ tyunit_ (tyvar_ "a") (ModM ()) (ModR ())) model.ty
-          in
-          match model with {ty = TyArrowCE (arr & {from = TyRecord rr})} then
+        let err =
+          argErr r.model
+            (tyarrowce_ tyunit_ (tyvar_ "a") (ModM ()) (ModR ())) model.ty
+        in
+        match model with {ty = TyArrowCE (arr & {from = TyRecord rr})} then
+          let ty = tyarrowce_ tyunit_ arr.to (ModM ()) (ModR ()) in
+          if subtype (model.ty, ty) then
             if mapIsEmpty rr.fields then
               resultOK [method.e, model.e]
                 (TyDist { info = r.info, ty = arr.to })
                 [method.fv, model.fv]
-            else err
+            else argErr r.model ty model.ty
           else err
-        else
-          result.err
-            (DTCContextConstraintError (infoTm r.model, Some (ModM (), wenv))))
+        else err)
 end
 
 lang DTCTypeOfAssume = Assume + DTCTypeOfBase
@@ -1359,28 +1357,31 @@ lang DTCTypeOfDiff = Diff + IsIsomorficToRn + DTCTypeOfBase
         match fn with {ty = TyArrowCE (arr & {e = ModD _})} then
           if and (isIsomorficToRn arr.from) (isIsomorficToRn arr.to)
           then
-            let fv = foldl1 setUnion [fn.fv, arg.fv, darg.fv] in
-            let promote = promote env fv in
-            let tyO = lam c.
-              if subtype (arg.ty, setC c arr.from) then
-                if subtype (darg.ty, setC (ModA ()) arr.from) then
-                  resultOK [fn.e, arg.e, darg.e]
-                    (promote (setC (ModA ()) arr.to)) [fv]
-                else argErr r.darg darg.ty arr.from
-              else argErr r.arg arg.ty arr.from
-            in
-            if subtype (fn.ty, TyArrowCE {
-              arr with
-              from = setC (ModA ()) arr.from, to = setC (ModA ()) arr.to })
-            then tyO (ModA ())
-            else
+            let fnty = TyArrowCE { arr with c = ModP () } in
+            if subtype (fn.ty, fnty) then
+              let fv = foldl1 setUnion [fn.fv, arg.fv, darg.fv] in
+              let promote = promote env fv in
+              let tyO = lam c.
+                if subtype (arg.ty, setC c arr.from) then
+                  if subtype (darg.ty, setC (ModA ()) arr.from) then
+                    resultOK [fn.e, arg.e, darg.e]
+                      (promote (setC (ModA ()) arr.to)) [fv]
+                  else argErr r.darg darg.ty arr.from
+                else argErr r.arg arg.ty arr.from
+              in
               if subtype (fn.ty, TyArrowCE {
                 arr with
-                from = setC (ModP ()) arr.from, to = setC (ModA ()) arr.to })
-              then tyO (ModP ())
+                from = setC (ModA ()) arr.from, to = setC (ModA ()) arr.to })
+              then tyO (ModA ())
               else
-                result.err (DTCDiffFnError (infoTm r.fn, Some (ModP (), fn.ty)))
-          else result.err (DTCDiffFnError (infoTm r.fn, Some (ModA (), fn.ty)))
+                if subtype (fn.ty, TyArrowCE {
+                  arr with
+                  from = setC (ModP ()) arr.from, to = setC (ModA ()) arr.to })
+                then tyO (ModP ())
+                else
+                  result.err (DTCDiffFnError (infoTm r.fn, Some (ModP (), fn.ty)))
+            else result.err (DTCArgError (infoTm r.fn, Some (fnty, fn.ty)))
+            else result.err (DTCDiffFnError (infoTm r.fn, Some (ModA (), fn.ty)))
         else result.err (DTCDiffFnError (infoTm r.fn, Some (ModP (), fn.ty))))
 end
 
@@ -2943,10 +2944,10 @@ in
 
 -- Diff
 
-let _test = lam c1. lam c2. lam c3. lam c4. lam e. _typeOf [
-  (_x, arre [(flt c1, e)] (flt c2)),
-  (_y, flt c3),
-  (_z, flt c4)
+let _test = lam c1. lam c2. lam c3. lam c4. lam c5. lam e. _typeOf [
+  (_x, arrce [(flt c1, c2, e)] (flt c3)),
+  (_y, flt c4),
+  (_z, flt c5)
 ] (TmDiff {
   fn = x,
   arg = y,
@@ -2956,97 +2957,115 @@ let _test = lam c1. lam c2. lam c3. lam c4. lam e. _typeOf [
 }) in
 
 utest
-  _test _A _A _A _A _D
+  _test _A _P _A _A _A _D
   with Right (_D, flt _A)
   using eq else onFail
 in
 
 utest
-  _test _A _A _P _P _D
-  with Right (_D, flt _A)
-  using eq else onFail
-in
-
-utest
-  _test _A _A _C _C _D
-  with Right (_D, flt _A)
-  using eq else onFail
-in
-
-utest
-  _test _A _A _M _M _D
-  with Right (_D, flt _A)
-  using eq else onFail
-in
-
-utest
-  _test _A _P _A _A _D
-  with Right (_D, flt _A)
-  using eq else onFail
-in
-
-utest
-  _test _A _C _A _A _D
-  with Right (_D, flt _A)
-  using eq else onFail
-in
-
-utest
-  _test _A _M _A _A _D
-  with Right (_D, flt _A)
-  using eq else onFail
-in
-
-utest
-  _test _P _A _A _A _D
+  _test _A _PC _A _A _A _D
   with Left [DTCArgError (NoInfo (), None ())]
   using eq else onFail
 in
 
 utest
-  _test _M _A _A _A _D
-  with Left [DTCDiffFnError (NoInfo (), None ())]
-  using eq else onFail
-in
-
-utest
-  _test _A _A _A _A _R
-  with Left [DTCDiffFnError (NoInfo (), None ())]
-  using eq else onFail
-in
-
-utest
-  _test _P _A _A _A _D
+  _test _A _C _A _A _A _D
   with Left [DTCArgError (NoInfo (), None ())]
   using eq else onFail
 in
 
 utest
-  _test _P _A _P _A _D
+  _test _A _M _A _A _A _D
   with Right (_D, flt _A)
   using eq else onFail
 in
 
 utest
-  _test _P _A _C _A _D
+  _test _A _P _A _P _P _D
+  with Right (_D, flt _P)
+  using eq else onFail
+in
+
+utest
+  _test _A _P _A _C _C _D
+  with Right (_D, flt _PC)
+  using eq else onFail
+in
+
+utest
+  _test _A _P _A _M _M _D
+  with Right (_D, flt _P)
+  using eq else onFail
+in
+
+utest
+  _test _A _P _P _A _A _D
+  with Right (_D, flt _A)
+  using eq else onFail
+in
+
+utest
+  _test _A _P _C _A _A _D
+  with Right (_D, flt _A)
+  using eq else onFail
+in
+
+utest
+  _test _A _P _M _A _A _D
+  with Right (_D, flt _A)
+  using eq else onFail
+in
+
+utest
+  _test _P _P _A _A _A _D
   with Left [DTCArgError (NoInfo (), None ())]
   using eq else onFail
 in
 
 utest
-  _test _P _A _M _A _D
-  with Right (_D, flt _A)
-  using eq else onFail
-in
-
-utest
-  _test _M _A _P _A _D
+  _test _M _P _A _A _A _D
   with Left [DTCDiffFnError (NoInfo (), None ())]
   using eq else onFail
 in
 
 utest
-  _test _M _A _M _A _D
+  _test _A _P _A _A _A _R
+  with Left [DTCDiffFnError (NoInfo (), None ())]
+  using eq else onFail
+in
+
+utest
+  _test _P _P _A _A _A _D
+  with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail
+in
+
+utest
+  _test _P _P _A _P _A _D
+  with Right (_D, flt _A)
+  using eq else onFail
+in
+
+utest
+  _test _P _P _A _C _A _D
+  with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail
+in
+
+utest
+  _test _P _P _A _M _A _D
+  with Right (_D, flt _A)
+  using eq else onFail
+in
+
+utest
+  _test _M _P _A _P _A _D
+  with Left [DTCDiffFnError (NoInfo (), None ())]
+  using eq else onFail
+in
+
+utest
+  _test _M _P _A _M _A _D
   with Left [DTCDiffFnError (NoInfo (), None ())]
   using eq else onFail
 in
@@ -3545,7 +3564,7 @@ let expectation_ = app_ (uconst_ (CDistExpectation ())) in
 
 utest
   _typeOf [] (nlam_ _x (flt _P) (expectation_ (infer__ (nlam_ _y tyunit_ x))))
-  with Left [DTCContextConstraintError (NoInfo (), None ())]
+  with Left [DTCArgError (NoInfo (), None ())]
   using eq else onFail
 in
 

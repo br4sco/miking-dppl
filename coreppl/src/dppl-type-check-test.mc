@@ -150,7 +150,7 @@ utest _typeOf env (strJoin "\n" [
   "  lam d : [FloatM].",
   "  lam z : FloatM -> ModM (ModR [FloatA]).",
   "  lam t : ().",
-  "    match (assume (Gaussian 1. 1.), assume (Gamma 1. 1.))",
+  "    match (assume (Gamma 1. 1.), assume (Gamma 1. 1.))",
   "    with (theta, nu) in",
   "    iter",
   "      (lam t : (FloatM, FloatM).",
