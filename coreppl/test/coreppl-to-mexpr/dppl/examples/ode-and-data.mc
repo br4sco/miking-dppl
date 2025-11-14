@@ -5,13 +5,17 @@ include "../lotka-model.mc"
 
 -- Specialize solver
 let solve =
-  lam f : FloatA -> [FloatA] -> [FloatA].
-    lam xy0 : (FloatA, [FloatA]).
+  lam f : FloatA -> (FloatA, [FloatA]) -> (FloatA, [FloatA]).
+    lam xy0 : (FloatA, (FloatA, [FloatA])).
       lam x : FloatP.
         solveode (RK4EC {
-          stepSize = 1e-2, add = adds, smul = smuls,
-          ok = lam yh : [FloatP]. lam y2h2 : [FloatP].
-            ltf (l2norms (subs yh y2h2)) (mulf (int2float (length yh)) 1e-2) })
+          stepSize = 1e-2,
+          add = lam x : (FloatA, [FloatA]). lam y : (FloatA, [FloatA]).
+            (addf x.0 y.0, adds x.1 y.1),
+          smul = lam x : FloatA. lam y : (FloatA, [FloatA]).
+            (mulf x y.0, smuls x y.1),
+          ok = lam yh : (FloatP, [FloatP]). lam y2h2 : (FloatP, [FloatP]).
+            ltf (l2norms (subs yh.1 y2h2.1)) (mulf (int2float (length yh.1)) 1e-2) })
                 f xy0 x
 
 -- Creates a solution trace from a IVP solution
@@ -31,13 +35,15 @@ let x0 = 0.
 let y0 = [1., 1.]
 
 -- ODE model
-let ode = lam #var"θ" : FloatA. lam x : FloatA. lam y : [FloatA].
-  let t = lotkaVolterra (#var"θ", 1., 1., 3.) (get y 0, get y 1) in
-  [t.0, t.1]
+let ode = lam x : FloatA. lam y : (FloatA, [FloatA]).
+  let t = lotkaVolterra (y.0, 1., 1., 3.) (get y.1 0, get y.1 1) in
+  (0., [t.0, t.1])
 
 -- IVP solution
 let y = lam #var"θ" : FloatA. lam xy0 : (FloatA, [FloatA]). lam x : FloatP.
-  solve (ode #var"θ") xy0 x
+  match xy0 with (x0, y0) in
+  match solve ode (x0, (#var"θ", y0)) x with (x1, (_, y1)) in
+  (x1, y1)
 
 -- We can only observe the density of preys
 let g = lam t : (FloatA, [FloatA]). get (t.1) 0
@@ -50,8 +56,19 @@ let #var"true_θ" = 1.5
 
 -- True solution
 let true_y = lam xy0 : (FloatA, [FloatA]). lam x : FloatP.
-  solveode (RK4 { stepSize = 1e-3, add = adds, smul = smuls })
-    (ode #var"true_θ") xy0 x
+  match xy0 with (x0, y0) in
+  match
+    solveode (RK4EC {
+      stepSize = 1e-3,
+      add = lam x : (FloatA, [FloatA]). lam y : (FloatA, [FloatA]).
+        (addf x.0 y.0, adds x.1 y.1),
+      smul = lam x : FloatA. lam y : (FloatA, [FloatA]).
+        (mulf x y.0, smuls x y.1),
+      ok = lam yh : (FloatP, [FloatP]). lam y2h2 : (FloatP, [FloatP]).
+        ltf (l2norms (subs yh.1 y2h2.1)) (mulf (int2float (length yh.1)) 1e-2) })
+      ode (x0, (#var"true_θ", y0)) x
+    with (x1, (_, y1)) in
+  (x1, y1)
 
 -- Measurement noise ν ~ N(0, 1)
 let noise = [ -0.82890921, -0.25021182, -0.63268277, -0.48174128,  1.36814387,
