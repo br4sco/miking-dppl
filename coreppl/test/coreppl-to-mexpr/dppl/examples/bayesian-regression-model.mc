@@ -1,7 +1,7 @@
 /- This example programs illustrates Bayesian regression -/
 
 let regressionModel =
-   lam d : [FloatM]. lam z : FloatM -> ModM (ModR [Float]). lam t : ().
+   lam d : [FloatM]. lam z : FloatM -> ModM (ModR [FloatA]). lam t : ().
     match (assume (Gamma 1. 1.), assume (Gamma 1. 1.))
       with (#var"θ", #var"𝜎²") in
     iter

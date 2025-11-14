@@ -1406,7 +1406,9 @@ lang DTCTypeOfSolveODE = SolveODE + IsIsomorficToRn + DTCTypeOfBase
             let yTy = setC (ModA ()) arr2.from in
             let odeRhsTy =
               TyArrowCE {
-                arr1 with to = tyarrowce_ yTy yTy (ModA ()) (ModD ()) }
+                arr1 with to = tyarrowce_ yTy yTy (ModA ()) (ModD ()),
+                c = ModC ()
+              }
             in
             let x1Ty = mulcType (ModPC ()) xTy in
             let fv =
@@ -1423,7 +1425,7 @@ lang DTCTypeOfSolveODE = SolveODE + IsIsomorficToRn + DTCTypeOfBase
                 argErr r.init init.ty (tytuple_ [xTy, yTy])
             else
               result.err
-                (DTCSolveODEModelError (infoTm r.model, Some model.ty))
+                (DTCArgError (infoTm r.model, Some (odeRhsTy, model.ty)))
           else
             result.err
               (DTCSolveODEModelError (infoTm r.model, Some model.ty))

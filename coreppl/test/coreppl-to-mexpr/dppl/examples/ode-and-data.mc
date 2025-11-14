@@ -5,7 +5,7 @@ include "../lotka-model.mc"
 
 -- Specialize solver
 let solve =
-  lam f : FloatA -> (FloatA, [FloatA]) -> (FloatA, [FloatA]).
+  lam f : FloatA -> ModC ((FloatA, [FloatA]) -> (FloatA, [FloatA])).
     lam xy0 : (FloatA, (FloatA, [FloatA])).
       lam x : FloatP.
         solveode (RK4EC {
@@ -36,7 +36,8 @@ let y0 = [1., 1.]
 
 -- ODE model
 let ode = lam x : FloatA. lam y : (FloatA, [FloatA]).
-  let t = lotkaVolterra (y.0, 1., 1., 3.) (get y.1 0, get y.1 1) in
+  match y with (#var"θ", y) in
+  let t = lotkaVolterra (#var"θ", 1., 1., 3.) (get y 0, get y 1) in
   (0., [t.0, t.1])
 
 -- IVP solution

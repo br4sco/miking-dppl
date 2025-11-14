@@ -1,7 +1,7 @@
 include "../lib.mc"
 
 let solve =
-  lam f : FloatC -> FloatA -> FloatA.
+  lam f : FloatC -> ModC (FloatA -> FloatA).
     lam xy0 : (FloatC, FloatA).
       lam x1 : FloatC.
         solveode (EFEC {
