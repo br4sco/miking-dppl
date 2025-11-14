@@ -2,7 +2,7 @@ include "./bayesian-parameter-estimation.mc"
 
 /- Illustrates inferring the posterior of IVP solution sensitivites -/
 
-let diff1 = lam f : FloatA -> FloatA. lam x : FloatA. diff f x 1.
+let diff1 = lam f : FloatA -> ModP FloatA. lam x : FloatA. diff f x 1.
 
 let _model = lam t : ().
   let #var"θ" = assume #var"Dist_θ" in
