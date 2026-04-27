@@ -52,6 +52,22 @@ let l2normp = lam a : (FloatA, FloatA).
 let smulp = lam s : FloatA. lam a : (FloatA, FloatA).
   (mulf s a.0, mulf s a.1)
 
+-- Add triplets
+let addt = lam a : (FloatA, FloatA, FloatA). lam b : (FloatA, FloatA, FloatA).
+  (addf a.0 b.0, addf a.1 b.1, addf a.2 b.2)
+
+-- Substract triplets
+let subt = lam a : (FloatA, FloatA, FloatA). lam b : (FloatA, FloatA, FloatA).
+  (subf a.0 b.0, subf a.1 b.1, subf a.2 b.2)
+
+-- Triplets L2 norm
+let l2normt = lam a : (FloatA, FloatA, FloatA).
+  addf (addf (mulf a.0 a.0) (mulf a.1 a.1)) (mulf a.2 a.2)
+
+-- Scalar multiplication of triplets
+let smult = lam s : FloatA. lam a : (FloatA, FloatA, FloatA).
+  (mulf s a.0, mulf s a.1, mulf s a.2)
+
 -- Vector equality
 let eqs = lam a : [FloatP]. lam b : [FloatP].
   foldl and true (map (lam t : (FloatP, FloatP). eqfApprox 0.05 t.0 t.1) (zip a b))

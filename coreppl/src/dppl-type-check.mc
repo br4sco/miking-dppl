@@ -1476,7 +1476,7 @@ lang DTCArithFloatType = ArithFloatAst + DTCTyConst
       let arr = lam from. lam to. iarr_ info from to in
       result.ok
         (arr (tyfloata (ModA ()))
-           (arr (tyfloata (ModP ())) (tyfloata (ModA ()))))
+           (arr (tyfloata (ModA ())) (tyfloata (ModA ()))))
   | CNegf _ ->
     let tyfloata = ityfloatc_ info (ModA ()) in
     result.ok (iarr_ info tyfloata tyfloata)
@@ -1488,7 +1488,7 @@ lang DTCElementaryFunctionsType = ElementaryFunctions + DTCTyConst
     let tyfloata = ityfloatc_ info (ModA ()) in
     result.ok (iarr_ info tyfloata tyfloata)
    | CLog _ | CSqrt _  | CAbsf _ ->
-    let tyfloata = ityfloatc_ info (ModPC ()) in
+    let tyfloata = ityfloatc_ info (ModA ()) in
     result.ok (iarr_ info tyfloata tyfloata)
   | CPow _ ->
     let tyfloata = ityfloatc_ info (ModA ()) in

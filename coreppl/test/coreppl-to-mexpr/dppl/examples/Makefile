@@ -6,7 +6,8 @@ EXAMPLES := \
 	bayesian-parameter-estimation-ivp-solution-trace-run.json \
 	bayesian-parameter-estimation-ivp-sensitivity-trace-run.json \
 	ode-sensitivites-two-methods-run.json \
-	rode-run.json
+	rode-run.json \
+	tumor-inhibitor-rode-run.json
 
 .PHONY: all
 all: $(EXAMPLES)

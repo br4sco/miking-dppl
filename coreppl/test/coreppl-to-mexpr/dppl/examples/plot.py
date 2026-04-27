@@ -1,6 +1,7 @@
 import json
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import ScalarFormatter
 
 BLUE = "#3498db"
 RED = "#e74c3c"
@@ -14,6 +15,11 @@ CYAN = "cyan"
 ORANGE = "tab:orange"
 GRAY = "tab:gray"
 PURPLE = "tab:purple"
+
+CB_BLUE = "#0072B2"
+CB_BLACK = "#000000"
+CB_ORANGE = "#E69F00"
+CB_SKY_BLUE = "#56B4E9"
 
 
 def post_process_weights_samples(weights, samples):
@@ -32,7 +38,7 @@ def set_grid(ax):
         True,
         which="major",
         linestyle="-",
-        linewidth=0.5,
+        linewidth=1.5,
         color="gray",
         alpha=0.5,
     )
@@ -40,7 +46,7 @@ def set_grid(ax):
         True,
         which="minor",
         linestyle="--",
-        linewidth=0.5,
+        linewidth=1.5,
         color="gray",
         alpha=0.2,
     )
@@ -109,7 +115,7 @@ def plot_trace(
         color="black",
         linestyle="dashed",
         label=prey_label,
-        linewidth=2
+        linewidth=2,
     )
     for i in range(len(samples)):
         ys = samples[i].transpose()
@@ -120,7 +126,7 @@ def plot_trace(
         color="black",
         linestyle="dashdot",
         label=pred_label,
-        linewidth=2
+        linewidth=2,
     )
     ax.set_ylim(
         bottom=np.min(trueTrace) - yminofs,
@@ -300,4 +306,182 @@ try:
 except FileNotFoundError:
     print(f"{file} not found")
 
+try:
+    file = "tumor-inhibitor-rode-run.json"
+    with open(file, "r") as file:
+        data = json.load(file)
+        xs = np.asarray(data["xs"])
+        sol = np.asarray(data["sol"])
+        sens = np.asarray(data["sens"])
+        plt.rcParams.update({"font.size": 24})
+        fig, ax = plt.subplots(1, 2, figsize=(12, 8), constrained_layout=True)
+
+        linestyle = ["-", "-.", "--", ":", (0, (5, 5))]
+
+        def plot(ax, ys, i, j, label, color):
+            ax.plot(
+                xs,
+                ys[i].transpose()[j],
+                alpha=5 * min(1, 1 / len(sol)),
+                color=color,
+                linewidth=2,
+                linestyle=linestyle[i % len(linestyle)],
+                label=label if i == 0 else None,
+            )
+
+        def set_axis(ax1, ax2):
+            formatter = ScalarFormatter(useMathText=True)
+            formatter.set_scientific(True)
+            formatter.set_powerlimits((0, 0))
+
+            ax1.yaxis.set_major_formatter(formatter)
+            ax2.yaxis.set_major_formatter(formatter)
+
+            ax1.set_zorder(ax2.get_zorder() + 1)
+            ax1.patch.set_visible(False)
+            ax1.grid(True)
+            ax2.grid(True, linestyle="--")
+
+        def set_legend(ax1, ax2, loc):
+            lines1, labels1 = ax1.get_legend_handles_labels()
+            lines2, labels2 = ax2.get_legend_handles_labels()
+            ax1.legend(lines1 + lines2, labels1 + labels2, loc=loc)
+
+        ax0tw = ax[0].twinx()
+
+        for i in range(len(sol)):
+            plot(ax[0], sol, i, 0, r"$C(t)$", CB_BLUE)
+            plot(ax0tw, sol, i, 1, r"$P(t)$", CB_ORANGE)
+            plot(ax0tw, sol, i, 2, r"$I(t)$", CB_BLACK)
+
+        ax[0].set_ylabel("Cancer cells", color=GRAY)
+        ax0tw.set_ylabel("Promoters and Inhibitors", color=GRAY)
+        ax[0].set_yticks([0, 10, 20, 30, 40, 50])
+        ax0tw.set_yticks([0, 500, 1000, 1500, 2000])
+
+        set_axis(ax[0], ax0tw)
+        set_legend(ax[0], ax0tw, "lower left")
+
+        ax1tw = ax[1].twinx()
+
+        for i in range(len(sens)):
+            plot(ax[1], sens, i, 0, r"$\partial_{a_I} C(t)$", CB_BLUE)
+            plot(ax1tw, sens, i, 1, r"$\partial_{a_I} P(t)$", CB_ORANGE)
+            plot(ax1tw, sens, i, 2, r"$\partial_{a_I} I(t)$", CB_BLACK)
+
+        ax[1].set_ylabel("Cancer cells", color=GRAY)
+        ax1tw.set_ylabel("Promoters and Inhibitors", color=GRAY)
+        # ax[0].set_yticks([0, 10, 20, 30, 40, 50])
+        # ax0tw.set_yticks([0, 500, 1000, 1500, 2000])
+
+        set_axis(ax[1], ax1tw)
+        set_legend(ax[1], ax1tw, "lower left")
+
+except FileNotFoundError:
+    print(f"{file} not found")
+
+try:
+    file = "tumor-inhibitor-rode-run.json"
+    with open(file, "r") as file:
+        data = json.load(file)
+        xs = np.asarray(data["xs"])
+        sol = np.asarray(data["sol"])
+        sens = np.asarray(data["sens"])
+        ws = np.asarray(data["ws"])
+        plt.rcParams.update({"font.size": 24})
+        fig, ax = plt.subplots(3, 2, figsize=(10, 8), constrained_layout=True)
+
+        linestyle = ["-", "-.", "--", ":", (0, (5, 5))]
+        markers = ["o", "s", "^", "*", "D"]
+
+        def plot(ax, ys, i, j, label, color):
+            ax.plot(
+                xs,
+                ys[i].transpose()[j],
+                alpha=5 * min(1, 1 / len(sol)),
+                # color=color,
+                linewidth=3,
+                linestyle=linestyle[i % len(linestyle)],
+                # marker=markers[i % len(markers)],
+                label=label if i == 0 else None,
+            )
+
+        def set_axis(ax):
+            formatter = ScalarFormatter(useMathText=True)
+            formatter.set_scientific(True)
+            formatter.set_powerlimits((0, 0))
+            ax.yaxis.set_major_formatter(formatter)
+
+        def set_legend(ax, loc):
+            lines, labels = ax.get_legend_handles_labels()
+            ax.legend(lines, labels, loc=loc)
+
+        for i in range(len(sol)):
+            plot(ax[0][0], sol, i, 0, r"$C(t)$", CB_BLUE)
+            plot(ax[1][0], sol, i, 1, r"$P(t)$", CB_ORANGE)
+            plot(ax[2][0], sol, i, 2, r"$I(t)$", CB_BLACK)
+
+        for i in range(len(sens)):
+            plot(ax[0][1], sens, i, 0, r"$\partial_{a_I} C(t)$", CB_BLUE)
+            plot(ax[1][1], sens, i, 1, r"$\partial_{a_I} P(t)$", CB_ORANGE)
+            plot(ax[2][1], sens, i, 2, r"$\partial_{a_I} I(t)$", CB_BLACK)
+
+        for aa in ax:
+            for a in aa:
+                set_axis(a)
+                set_grid(a)
+
+        xticks = [0, 30, 60]
+
+        ax[0][0].set_yticks([30, 40])
+        ax[0][0].set_xticks(xticks)
+        ax[0][0].set_xticklabels([])
+        ax[1][0].set_yticks([1400, 1600])
+        ax[1][0].set_xticks(xticks)
+        ax[1][0].set_xticklabels([])
+        ax[2][0].set_yticks([1000, 1200])
+        ax[2][0].set_xticks(xticks)
+
+        ax[0][1].set_yticks([0, -100])
+        ax[0][1].set_xticks(xticks)
+        ax[0][1].set_xticklabels([])
+        ax[1][1].set_yticks([0, -4000])
+        ax[1][1].set_xticks(xticks)
+        ax[1][1].set_xticklabels([])
+        ax[2][1].set_yticks([0, 4000])
+        ax[2][1].set_xticks(xticks)
+
+
+        ax[0][0].set_ylabel(r"$C(t)$")
+        ax[1][0].set_ylabel(r"$P(t)$")
+        ax[2][0].set_ylabel(r"$I(t)$")
+
+        ax[0][1].set_ylabel(r"$\frac{\partial}{\partial a_I} C(t)$")
+        ax[1][1].set_ylabel(r"$\frac{\partial}{\partial a_I} P(t)$")
+        ax[2][1].set_ylabel(r"$\frac{\partial}{\partial a_I} I(t)$")
+
+        ax[2][0].set_xlabel(r"$t$")
+        ax[2][1].set_xlabel(r"$t$")
+
+        fig.align_ylabels(ax)
+
+        fig, ax = plt.subplots(1, 1, figsize=(6, 3), constrained_layout=True)
+        for i in range(len(ws)):
+            plot(ax, ws, i, 0, r"$W_t$", CB_SKY_BLUE)
+
+        set_axis(ax)
+        set_grid(ax)
+
+        ax.set_yticks([-20, 0, 20])
+        ax.set_xticks(xticks)
+
+        ax.set_ylabel(r"$W_t$")
+        ax.set_xlabel(r"$t$")
+
+        fig.align_ylabels(ax)
+
+except FileNotFoundError:
+    print(f"{file} not found")
+
+plt.style.use('tableau-colorblind10')
 plt.show()

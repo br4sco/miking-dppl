@@ -53,5 +53,5 @@ let samples = map (map (map (lam t : (FloatA, FloatA). (t.0, [t.1])))) samples i
 printWeightedTraces samples weights
 
 -- Local Variables:
--- compile-command: "cppl --seed 1 --cps partial --dppl-typecheck rode2.mc && ./out | dppl-plot-process --lines && rm ./out"
+-- compile-command: "cppl --seed 1 --cps partial --dppl-typecheck rode.mc && ./out | dppl-plot-process --lines && rm ./out"
 -- End:
