@@ -30,7 +30,7 @@ lang DPPLParser =
   syn Type =
   -- This type only lives in the parser and is transformed to an modifier
   -- annotation on `TyFloatC` or `TyArrowCE`.
-  | TyModC { c : DTCCoeffect, info : Info, ty : Type }
+  | TyModC { c : DTCReg, info : Info, ty : Type }
   | TyModE { e : DTCEffect, info : Info, ty : Type }
 
   sem tyWithInfo info =
@@ -52,7 +52,7 @@ lang DPPLParser =
   sem getTypeStringCode (indent : Int) (env : PprintEnv) =
   | TyModC t ->
     match getTypeStringCode indent env t.ty with (env, ty) in
-    (env, join ["Mod(", dtcCoeffectToString t.c, ",", ty, ")"])
+    (env, join ["Mod(", dtcRegToString t.c, ",", ty, ")"])
   | TyModE t ->
     match getTypeStringCode indent env t.ty with (env, ty) in
     (env, join ["Mod(", dtcEffectToString t.e, ",", ty, ")"])
@@ -297,38 +297,38 @@ lang DPPLParser =
   | "ModC" -> Some(1, lam seq. TyModC { c = ModC (), info = info, ty = get seq 0 })
   | "ModM" -> Some(1, lam seq. TyModC { c = ModM (), info = info, ty = get seq 0 })
   | "ModR" -> Some(1, lam seq. TyModE { e = ModR (), info = info, ty = get seq 0 })
-  | "FloatA" -> Some(0, lam seq. TyFloatC { info = info, c = ModA () })
-  | "FloatPC" -> Some(0, lam seq. TyFloatC { info = info, c = ModPC () })
-  | "FloatP" -> Some(0, lam seq. TyFloatC { info = info, c = ModP () })
-  | "FloatC" -> Some(0, lam seq. TyFloatC { info = info, c = ModC () })
-  | "FloatM" -> Some(0, lam seq. TyFloatC { info = info, c = ModM () })
+  | "FloatA" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcXDown (ModA ()) })
+  | "FloatPC" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcPC })
+  | "FloatP" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcXDown (ModP ()) })
+  | "FloatC" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcXDown (ModC ()) })
+  | "FloatM" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcXDown (ModM ()) })
 
   sem decorateTypesExn : Expr -> Expr
   sem decorateTypesExn =| tm ->
     smap_Expr_Expr decorateTypesExn (smap_Expr_Type decorateTypesH tm)
 
+  sem gatherTyCEs : Type -> (DTCRegSet, Option DTCEffect, Type)
+  sem gatherTyCEs =
+  | TyModC r ->
+    match gatherTyCEs r.ty with (cs, e, ty) in
+    (cons r.c cs, e, ty)
+  | TyModE r ->
+    match gatherTyCEs r.ty with (cs, None _, ty) then (cs, Some r.e, ty)
+    else errorSingle [r.info] "Parse error: Multiple effect decorations on arrow type"
+  | ty -> ([], None (), ty)
+
   sem decorateTypesH : Type -> Type
   sem decorateTypesH =
-  | TyFloat r -> TyFloatC { info = r.info, c = ModA () }
+  | TyFloat r -> TyFloatC { info = r.info, cs = dtcXDown (ModA ()) }
   | TyArrow r ->
-    let ty = TyArrowCE {
-      info = r.info, from = r.from, to = r.to, c = ModA (), e = ModD () } in
-    smap_Type_Type decorateTypesH ty
-  | TyArrow (r & {to = TyModC {c = c, ty = to}}) ->
-    let ty = TyArrowCE {
-      info = r.info, from = r.from, to = to, c = c, e = ModD () } in
-    smap_Type_Type decorateTypesH ty
-  | TyArrow (r & {to = TyModE {e = e, ty = to}}) ->
-    let ty = TyArrowCE {
-      info = r.info, from = r.from, to = to, c = ModA (), e = e } in
-    smap_Type_Type decorateTypesH ty
-  | TyArrow (r & {to = TyModC {c = c, ty = TyModE {e = e, ty = to}}}) ->
-    let ty = TyArrowCE {
-      info = r.info, from = r.from, to = to, c = c, e = e } in
-    smap_Type_Type decorateTypesH ty
-  | TyArrow (r & {to = TyModE {e = e, ty = TyModC {c = c, ty = to}}}) ->
-    let ty = TyArrowCE {
-      info = r.info, from = r.from, to = to, c = c, e = e } in
+    match gatherTyCEs r.to with (cs, e, to) in
+    let ty = TyArrowCE
+      { info = r.info
+      , from = r.from
+      , to = to
+      , cs = cs
+      , e = optionGetOr (ModD ()) e
+      } in
     smap_Type_Type decorateTypesH ty
   | TyModC r ->
     errorSingle [r.info]
