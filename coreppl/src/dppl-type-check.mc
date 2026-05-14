@@ -196,7 +196,6 @@ let dtcXDown : DTCReg -> DTCRegSet = lam c.
   end
 
 let dtcPC : DTCRegSet = dtcXUnion (dtcXDown (ModP ())) (dtcXDown (ModC ()))
-let dtcStar : DTCRegSet = []
 
 let dtcXbar : DTCRegSet -> DTCRegSet =
   lam cs. filter (lam c. any (dtcLeqc c) cs) dtcReg
@@ -213,7 +212,7 @@ let dtcXMax : DTCRegSet -> DTCRegSet = lam cs.
 utest dtcXMax (dtcXDown (ModA ())) with [ModA ()]
 utest dtcXMax (dtcXDown (ModP ())) with [ModP ()]
 utest dtcXMax (dtcXDown (ModC ())) with [ModC ()]
-utest dtcXMax dtcStar with dtcStar
+utest dtcXMax [] with []
 utest dtcXMax dtcPC with [ModP (), ModC ()]
 
 -- Returns min regularities.
@@ -225,7 +224,7 @@ let dtcXMin : DTCRegSet -> DTCRegSet = lam cs.
   case [c] ++ _ then [c]
   end
 
-utest dtcXMin dtcStar with dtcStar
+utest dtcXMin [] with []
 utest dtcXMin (dtcXDown (ModA ())) with [ModC (), ModP ()]
 utest dtcXMin (dtcXDown (ModP ())) with [ModP ()]
 utest dtcXMin (dtcXDown (ModC ())) with [ModC ()]
@@ -237,7 +236,7 @@ utest dtcXMin [ModA (), ModC ()] with [ModC ()]
 let dtcLowerSurface : DTCReg -> DTCRegSet = lam c.
   switch c
   case ModA _ then [ModC (), ModP ()]
-  case ModC _ | ModP _ then dtcStar
+  case ModC _ | ModP _ then []
   end
 
 -- ┌───────────────┐
@@ -277,27 +276,19 @@ lang DTCAstBase = Ast + Eq
   -- │ Regularity Operations │
   -- └───────────────────────┘
 
-  -- T ≤ X
-  sem leqTypeX : Type -> DTCRegSet -> Bool
-  sem leqTypeX ty =| cs -> leqTypeXH (ty, cs)
-
-  sem leqTypeXH : (Type, DTCRegSet) -> Bool
-  sem leqTypeXH =| (_, _) -> true
-
   -- X ⋅ T
   sem mulXType : DTCRegSet -> Type -> Type
   sem mulXType cs =| ty -> smap_Type_Type (mulXType cs) ty
 
-  -- X ~ T
-  sem tildeXType : DTCRegSet -> Type -> Bool
-  sem tildeXType cs =| _ -> true
-
+  -- Accumulates the least conservative X from T s.t. T ≤ X.
   sem accPromote : DTCRegSet -> Type -> DTCRegSet
   sem accPromote acc =| ty -> sfold_Type_Type accPromote acc ty
 
+  -- The least conservative augmentation of X s.t. X ~ T.
   sem accApp : DTCRegSet -> Type -> DTCRegSet
   sem accApp acc =| ty -> sfold_Type_Type accApp acc ty
 
+  -- Sets all regularities in T to X.
   sem withX : DTCRegSet -> Type -> Type
   sem withX cs =| ty -> smap_Type_Type (withX cs) ty
 
@@ -435,13 +426,11 @@ lang DTCFloatTypeAst = DTCAstBase + FloatTypeAst + PrettyPrint
   | TyFloatC r -> TyFloat { info = r.info }
 
   sem fromMExprTy =
-  | TyFloat r -> TyFloatC { info = r.info, cs = dtcStar }
+  | TyFloat r -> TyFloatC { info = r.info, cs = [] }
 
   -- ┌───────────────────────┐
   -- │ Regularity Operations │
   -- └───────────────────────┘
-
-  sem leqTypeXH =| (TyFloatC r, cs) -> dtcXIsSubsetEq r.cs cs
 
   sem mulXType cs =
   | TyFloatC r -> TyFloatC { r with cs = dtcXbar (dtcXIntersection cs r.cs) }
@@ -540,14 +529,11 @@ lang DTCFunTypeAst = DTCBottomTypeAst + FunTypeAst + PrettyPrint
   sem fromMExprTy =
   | TyArrow r ->
     smap_Type_Type fromMExprTy
-      (ityarrowXe_ r.info r.from r.to dtcStar (ModD ()))
+      (ityarrowXe_ r.info r.from r.to [] (ModD ()))
 
   -- ┌───────────────────────┐
   -- │ Regularity Operations │
   -- └───────────────────────┘
-
-  sem leqTypeXH =
-  | (TyArrowCE r, cs) -> dtcXIsSubsetEq r.cs cs
 
   sem mulXType cs =
   | TyArrowCE r -> TyArrowCE { r with cs = dtcXIntersection cs r.cs }
@@ -611,12 +597,6 @@ lang DTCSeqTypeAst = DTCAstBase + SeqTypeAst
   -- │ Regularity Operations │
   -- └───────────────────────┘
 
-  sem leqTypeXH =
-  | (TySeq r, cs) -> leqTypeX r.ty cs
-
-  sem tildeXType cs =
-  | TySeq r -> tildeXType cs r.ty
-
   -- ┌───────────┐
   -- │ Subtyping │
   -- └───────────┘
@@ -636,12 +616,6 @@ lang DTCRecordTypeAst = DTCBottomTypeAst + RecordTypeAst
   -- ┌───────────────────────┐
   -- │ Regularity Operations │
   -- └───────────────────────┘
-
-  sem leqTypeXH =
-  | (TyRecord r, cs) -> mapAll (flip leqTypeX cs) r.fields
-
-  sem tildeXType cs =
-  | TyRecord r -> mapAll (tildeXType cs) r.fields
 
   -- ┌───────────┐
   -- │ Subtyping │
@@ -813,7 +787,7 @@ lang DTCEnv = DTCAst + PrettyPrint
 
   sem dtcEnvAccPromote : DTCEnv -> DTCRegSet
   sem dtcEnvAccPromote =| env ->
-    mapFoldWithKey (lam acc. lam. accPromote acc) dtcStar env
+    mapFoldWithKey (lam acc. lam. accPromote acc) [] env
 end
 
 -- ┌──────────────┐
@@ -1312,10 +1286,10 @@ lang DTCTypeOfInfer = Infer + DTCTypeOfBase
       (lam method. lam model.
         let err =
           argErr r.model
-            (tyarrowXe_ tyunit_ (tyvar_ "a") dtcStar (ModR ())) model.ty
+            (tyarrowXe_ tyunit_ (tyvar_ "a") [] (ModR ())) model.ty
         in
         match model with {ty = TyArrowCE (arr & {from = TyRecord rr})} then
-          let ty = tyarrowXe_ tyunit_ arr.to dtcStar (ModR ()) in
+          let ty = tyarrowXe_ tyunit_ arr.to [] (ModR ()) in
           if subtype model.ty ty then
             if mapIsEmpty rr.fields then
               resultOK [method.e, model.e]
@@ -1357,7 +1331,7 @@ lang DTCTypeOfWeight = Weight + DTCTypeOfBase
   sem typeOfH env =
   | TmWeight r ->
     result.bind (typeOfH env r.weight) (lam weight.
-      let ty = tyfloatX_ dtcStar in
+      let ty = tyfloatX_ [] in
       if subtype weight.ty ty then
         result.ok {
           weight with e = ModR (), ty = tyWithInfo r.info tyunit_
@@ -1389,7 +1363,7 @@ lang DTCTypeOfDist = Dist + WienerDist + DTCTypeOfBase
   | DWiener r ->
     Some ( [tyunit_]
          , ityarrowXe_ info (tyfloatc_ (ModC ())) (tyfloatc_ (ModA ()))
-             dtcStar (ModD ()) )
+             [] (ModD ()) )
   | dist ->
     match distTy info dist with ([], paramTys, suppTy) then
       Some (map fromMExprTy paramTys, fromMExprTy suppTy)
@@ -1522,17 +1496,17 @@ end
 -- └───────────────────┘
 
 let iarr_ = lam info. lam from. lam to.
-  use DTCAst in ityarrowXe_ info from to dtcStar (ModD ())
+  use DTCAst in ityarrowXe_ info from to [] (ModD ())
 
 let arr_ = lam from. lam to.
-  use DTCAst in ityarrowXe_ (NoInfo ()) from to dtcStar (ModD ())
+  use DTCAst in ityarrowXe_ (NoInfo ()) from to [] (ModD ())
 
 let iarre_ = lam info. lam from. lam to. lam e.
-  use DTCAst in ityarrowXe_ info from to dtcStar e
+  use DTCAst in ityarrowXe_ info from to [] e
 
 lang DTCFloatType = DTCTyConst
   sem dtcConstType info =| (CFloat _, []) ->
-    result.ok (ityfloatX_ info dtcStar)
+    result.ok (ityfloatX_ info [])
 end
 
 -- NOTE(oerikss, 2025-10-08): We assume that elementary functions are analytic
@@ -1872,63 +1846,6 @@ let eqMatrix = lam cmp. lam x. lam y.
        , eqi (length (join x)) (length (join y))
        , allb ((zipWith cmp (join x) (join y))) ] in
 
-type Tupl7 a = (a, a, a, a, a) in
-
-let xCombinations =
-  ( dtcStar
-  , dtcXDown _C
-  , dtcXDown _P
-  , dtcXDown _A
-  , dtcPC ) in
-
-let mapXCombinations : all a. (DTCRegSet -> a) -> Tupl7 a =
-  lam f.
-    ( f xCombinations.0
-    , f xCombinations.1
-    , f xCombinations.2
-    , f xCombinations.3
-    , f xCombinations.4 ) in
-
-let xCombinationsToString : all a. all b.
-  (a -> String) -> (b -> String) -> Tupl7 a -> Tupl7 b -> String =
-  lam lstr. lam rstr. lam l. lam r.
-    let f = lam i. lam x. lam pad. lam l. lam r.
-      [ int2string i
-      , ".\nX = ", dtcRegSetToString x
-      , ":\n"
-      , "LHS = "
-      , lstr l
-      , "\nRHS = "
-      , rstr r
-      , "\n"] in
-    strJoin "\n" (map join
-                    [ f 0 xCombinations.0 "                      " l.0 r.0
-                    , f 1 xCombinations.1 "                  " l.1 r.1
-                    , f 2 xCombinations.2 "            " l.2 r.2
-                    , f 3 xCombinations.3 "            " l.3 r.3
-                    , f 4 xCombinations.4 "" l.4 r.4
-                    ])
-in
-
-let dup7 = lam x. (x, x, x, x, x) in
-
-let eqTupl7 : all a. all b.
-  (a -> b -> Bool) -> Tupl7 a -> Tupl7 b -> Bool =
-  lam eq. lam x. lam y. allb
-                    [ eq x.0 y.0
-                    , eq x.1 y.1
-                    , eq x.2 y.2
-                    , eq x.3 y.3
-                    , eq x.4 y.4
-                    ] in
-
--- Shared eq/toStr helpers used across all type-test sections below.
-let _eqLeqX    = eqTupl7 eqBool in
-let _toStrLeqX = xCombinationsToString bool2string bool2string in
-
-let _eqMulX    = eqTupl7 eqType in
-let _toStrMulX = xCombinationsToString type2str type2str in
-
 let _eqJoin    = tupleEq2 (optionEq eqType) (optionEq eqType) in
 let _toStrJoin =
   let f = pairToString (optionMapOr "None" type2str) in
@@ -1939,504 +1856,308 @@ let _toStrMeet =
   let f = pairToString type2str in
   utestDefaultToString f f in
 
--- -- ┌────────────┐
--- -- │ Test TyBot │
--- -- └────────────┘
---
--- -- Utils
---
--- utest eqType tybot_ tybot_ with true in
--- utest applyBoth eqType tybot_ tyunknown_ with (false, false) in
---
--- utest eraseDecorationsType tybot_ with tyunknown_ using eqType in
---
--- -- Reg
---
--- utest mapXCombinations (leqTypeX tybot_) with dup7 true in
---
--- utest mapXCombinations (flip mulXType tybot_) with dup7 tybot_
---   using _eqMulX else _toStrMulX in
---
--- utest mapXCombinations (flip tildeXType tybot_) with dup7 true in
---
--- -- Subtyping
---
--- utest applyBoth subtype tybot_ tyunknown_ with (true, false) in
---
--- utest applyBoth joinType tybot_ tyunknown_ with dup (Some tyunknown_)
---   using _eqJoin in
---
--- utest applyBoth meetType tybot_ tyunknown_ with dup tybot_ using _eqMeet in
---
--- -- ┌───────────────┐
--- -- │ Test TyFloatC │
--- -- └───────────────┘
---
--- -- Utils
---
--- utest cartesian (lam c. lam d. eqType (tyfloatc_ c) (tyfloatc_ d)) dtcReg dtcReg with
---   [ [true,  false, false]
---   , [false, true,  false]
---   , [false, false, true]
---   ] in
---
--- utest map (lam c. eraseDecorationsType (tyfloatc_ c)) dtcReg
---   with create 4 (lam. tyfloat_)
---   using eqSeq eqType in
---
--- -- Reg
---
--- utest mapXCombinations (leqTypeX (tyfloatX_ dtcStar))
---   with dup7 true
---   using _eqLeqX else _toStrLeqX in
---
--- utest mapXCombinations (leqTypeX (tyfloatc_ _C))
---   with (false, false, true, false, true, true, false)
---   using _eqLeqX else _toStrLeqX in
---
--- utest mapXCombinations (leqTypeX (tyfloatc_ _P))
---   with (false, false, false, true, true, true, false)
---   using _eqLeqX else _toStrLeqX in
---
--- utest mapXCombinations (leqTypeX (tyfloatc_ _A))
---   with (false, false, false, false, true, false, false)
---   using _eqLeqX else _toStrLeqX in
---
--- utest mapXCombinations (flip mulXType (tyfloatc_ _M))
---   with ( tyfloatX_ dtcStar
---        , tyfloatc_ _M
---        , tyfloatc_ _M
---        , tyfloatc_ _M
---        , tyfloatc_ _M
---        , tyfloatc_ _M
---        , tyfloatX_ dtcStar )
---   using _eqMulX else _toStrMulX in
---
--- utest mapXCombinations (flip mulXType (tyfloatc_ _C))
---   with ( tyfloatX_ dtcStar
---        , tyfloatc_ _M
---        , tyfloatc_ _C
---        , tyfloatc_ _M
---        , tyfloatc_ _C
---        , tyfloatc_ _C
---        , tyfloatc_ _C )
---   using _eqMulX else _toStrMulX in
---
--- utest mapXCombinations (flip mulXType (tyfloatc_ _P))
---   with ( tyfloatX_ dtcStar
---        , tyfloatc_ _M
---        , tyfloatc_ _M
---        , tyfloatc_ _P
---        , tyfloatc_ _P
---        , tyfloatc_ _P
---        , tyfloatc_ _P )
---   using _eqMulX else _toStrMulX in
---
--- utest mapXCombinations (flip mulXType (tyfloatc_ _A))
---   with ( tyfloatX_ dtcStar
---        , tyfloatc_ _M
---        , tyfloatc_ _C
---        , tyfloatc_ _P
---        , tyfloatc_ _A
---        , tyfloatX_ dtcPC
---        , tyfloatX_ dtcPC )
---   using _eqMulX else _toStrMulX in
---
--- utest map (lam c. mapXCombinations (flip tildeXType (tyfloatc_ c))) dtcReg
---   with (create (length dtcReg) (lam. dup7 true)) in
---
--- -- Subtyping
---
--- let tys = concat (map tyfloatc_ dtcReg) [tyfloatX_ dtcPC, tyunknown_] in
--- let lbls = ["M", "C", "P", "A", "PC", "Ukn"] in
--- let _matrixToString =
---   matrixToString lbls (cons "  " lbls) (lam x. if x then "T" else "F") in
---
--- utest cartesian subtype tys tys with
---   -- M      C      P      A      PC     Ukn
---   [ [true,  true,  true,  true,  true,  false]    -- M
---   , [false, true,  false, true,  true,  false]    -- C
---   , [false, false, true,  true,  true,  false]    -- P
---   , [false, false, false, true,  false, false]    -- A
---   , [false, false, false, true,  true,  false]    -- PC
---   , [false, false, false, false, false, true]     -- Ukn
---   ]
---   using eqMatrix eqBool
--- else utestDefaultToString _matrixToString _matrixToString in
---
--- let _matrixToString =
---   matrixToString lbls (cons "  " lbls) (optionMapOr "None" type2str) in
---
--- utest cartesian joinType tys tys with
---   -- M                       C                       P                       A                    PC                      Ukn
---   [ [Some (tyfloatc_ _M),    Some (tyfloatc_ _C),    Some (tyfloatc_ _P),    Some (tyfloatc_ _A), Some (tyfloatX_ dtcPC), None ()]         -- M
---   , [Some (tyfloatc_ _C),    Some (tyfloatc_ _C),    Some (tyfloatX_ dtcPC), Some (tyfloatc_ _A), Some (tyfloatX_ dtcPC), None ()]         -- C
---   , [Some (tyfloatc_ _P),    Some (tyfloatX_ dtcPC), Some (tyfloatc_ _P),    Some (tyfloatc_ _A), Some (tyfloatX_ dtcPC), None ()]         -- P
---   , [Some (tyfloatc_ _A),    Some (tyfloatc_ _A),    Some (tyfloatc_ _A),    Some (tyfloatc_ _A), Some (tyfloatc_ _A),    None ()]         -- A
---   , [Some (tyfloatX_ dtcPC), Some (tyfloatX_ dtcPC), Some (tyfloatX_ dtcPC), Some (tyfloatc_ _A), Some (tyfloatX_ dtcPC), None ()]         -- PC
---   , [None (),                None (),                None (),                None (),             None (),                Some tyunknown_] -- Ukn
---   ]
---   using eqMatrix (optionEq eqType)
--- else utestDefaultToString _matrixToString _matrixToString in
---
--- let _matrixToString =
---   matrixToString lbls (cons "  " lbls) type2str in
---
--- utest cartesian meetType tys tys with
---   -- M             C             P             A                PC               Ukn
---   [ [tyfloatc_ _M, tyfloatc_ _M, tyfloatc_ _M, tyfloatc_ _M,    tyfloatc_ _M,    tybot_]         -- M
---   , [tyfloatc_ _M, tyfloatc_ _C, tyfloatc_ _M, tyfloatc_ _C,    tyfloatc_ _C,    tybot_]         -- C
---   , [tyfloatc_ _M, tyfloatc_ _M, tyfloatc_ _P, tyfloatc_ _P,    tyfloatc_ _P,    tybot_]         -- P
---   , [tyfloatc_ _M, tyfloatc_ _C, tyfloatc_ _P, tyfloatc_ _A,    tyfloatX_ dtcPC, tybot_]         -- A
---   , [tyfloatc_ _M, tyfloatc_ _C, tyfloatc_ _P, tyfloatX_ dtcPC, tyfloatX_ dtcPC, tybot_]         -- PC
---   , [tybot_,       tybot_,       tybot_,       tybot_,          tybot_,          tyunknown_]     -- Ukn
---   ]
---   using eqMatrix eqType
--- else utestDefaultToString _matrixToString _matrixToString in
---
--- -- ┌────────────────┐
--- -- │ Test TyArrowCE │
--- -- └────────────────┘
---
--- -- Utils
---
--- utest
---   cartesian
---     (lam e. lam f.
---       let arr = tyarrowXe_ tyunknown_ tyunknown_  dtcStar in
---       eqType (arr e) (arr f))
---     dtcEff dtcEff with
---   [ [true,  false]
---   , [false, true]
---   ] in
---
--- let arr_ = lam cs. tyarrowXe_ tyunknown_ tyunknown_ cs _D in
---
--- utest
---   cartesian
---     (lam c. lam d. eqType (arr_ (dtcXDown c)) (arr_ (dtcXDown d))) dtcReg dtcReg
---   with
---   [ [true,  false, false, false]
---   , [false, true,  false, false]
---   , [false, false, true,  false]
---   , [false, false, false, true]
---   ] in
---
--- utest
---   mapXCombinations
---     (lam cs.
---       eraseDecorationsType (tyarrowXe_ tyunknown_ tyunknown_ cs _D))
---   with dup7 (tyarrow_ tyunknown_ tyunknown_) using eqTupl7 eqType
--- else xCombinationsToString type2str type2str in
---
--- -- Reg
---
--- utest mapXCombinations (leqTypeX (arr_ (dtcXDown _M)))
---   with (false, true, true, true, true, true, false)
---   using _eqLeqX else _toStrLeqX in
---
--- utest mapXCombinations (leqTypeX (arr_ (dtcXDown _C)))
---   with (false, false, true, false, true, true, false)
---   using _eqLeqX else _toStrLeqX in
---
--- utest mapXCombinations (leqTypeX (arr_ (dtcXDown _P)))
---   with (false, false, false, true, true, true, false)
---   using _eqLeqX else _toStrLeqX in
---
--- utest mapXCombinations (leqTypeX (arr_ (dtcXDown _A)))
---   with (false, false, false, false, true, false, false)
---   using _eqLeqX else _toStrLeqX in
---
--- utest mapXCombinations (flip mulXType (arr_ (dtcXDown _M)))
---   with ( arr_ dtcStar
---        , arr_ (dtcXDown _M)
---        , arr_ (dtcXDown _M)
---        , arr_ (dtcXDown _M)
---        , arr_ (dtcXDown _M)
---        , arr_ (dtcXDown _M)
---        , arr_ dtcStar )
---   using _eqMulX else _toStrMulX in
---
--- utest mapXCombinations (flip mulXType (arr_ (dtcXDown _C)))
---   with ( arr_ dtcStar
---        , arr_ (dtcXDown _M)
---        , arr_ (dtcXDown _C)
---        , arr_ (dtcXDown _M)
---        , arr_ (dtcXDown _C)
---        , arr_ (dtcXDown _C)
---        , arr_ [_C] )
---   using _eqMulX else _toStrMulX in
---
--- utest mapXCombinations (flip mulXType (arr_ (dtcXDown _P)))
---   with ( arr_ dtcStar
---        , arr_ dtcStar
---        , arr_ (dtcXDown _P)
---        , arr_ (dtcXDown _P)
---        , arr_ (dtcXDown _P)
---        , arr_ [_P] )
---   using _eqMulX else _toStrMulX in
---
--- utest mapXCombinations (flip mulXType (arr_ (dtcXDown _A)))
---   with ( arr_ dtcStar
---        , arr_ (dtcXDown _C)
---        , arr_ (dtcXDown _P)
---        , arr_ (dtcXDown _A)
---        , arr_ dtcPC
---        , arr_ [_C, _P] )
---   using _eqMulX else _toStrMulX in
---
--- utest map (lam c. mapXCombinations (lam cs. tildeXType (dtcXDown c) (arr_ cs))) dtcReg
---   with
---   [ (true, true, true, true, true, true, false) -- M
---   , (true, true, true, true, true, true, false) -- C
---   , (true, true, true, true, true, true, false) -- P
---   , (true, true, true, true, true, true, true)  -- A
---   ]
---   using eqSeq (eqTupl7 eqBool) else
---   (lam xs. lam ys.
---     join (zipWithIndex
---             (lam i. lam x. lam y.
---               join [ "Y = "
---                    , dtcRegSetToString (dtcXDown (get dtcReg i))
---                    , ":\n"
---                    , xCombinationsToString bool2string bool2string x y
---                    , "\n"
---               ])
---             xs ys)) in
---
--- utest tildeXType [] (arr_ [_C]) with false in
---
--- -- Subtyping
---
--- let arr_ = lam from. lam to. tyarrowXe_ from to dtcStar _D in
--- utest subtype (arr_ tyunknown_ tyunknown_) (arr_ tyunknown_ tyunknown_) with true in
--- utest subtype (arr_ tyunknown_ tybot_) (arr_ tyunknown_ tyunknown_) with true in
--- utest subtype (arr_ tyunknown_ tyunknown_) (arr_ tybot_ tyunknown_) with true in
--- utest subtype (arr_ tybot_ tyunknown_) (arr_ tyunknown_ tyunknown_) with false in
--- utest subtype (arr_ tyunknown_ tyunknown_) (arr_ tyunknown_ tybot_) with false in
---
--- utest applyBoth joinType (arr_ tyunknown_ tyunknown_) tyunknown_
---   with dup (None ())
---   using _eqJoin else _toStrJoin in
---
--- utest applyBoth joinType (arr_ tyunknown_ tyunknown_) (arr_ tyunknown_ tyunknown_)
---   with dup (Some (arr_ tyunknown_ tyunknown_))
---   using _eqJoin else _toStrJoin in
---
--- utest applyBoth joinType (arr_ tyunknown_ tybot_) (arr_ tyunknown_ tyunknown_)
---   with dup (Some (arr_ tyunknown_ tyunknown_))
---   using _eqJoin else _toStrJoin in
---
--- utest applyBoth joinType (arr_ tybot_ tyunknown_) (arr_ tyunknown_ tyunknown_)
---   with dup (Some (arr_ tybot_ tyunknown_))
---   using _eqJoin else _toStrJoin in
---
--- utest applyBoth meetType (arr_ tyunknown_ tyunknown_) tyunknown_
---   with dup tybot_
---   using _eqMeet else _toStrMeet in
---
--- utest applyBoth meetType (arr_ tyunknown_ tyunknown_) (arr_ tyunknown_ tyunknown_)
---   with dup (arr_ tyunknown_ tyunknown_)
---   using _eqMeet else _toStrMeet in
---
--- utest applyBoth meetType (arr_ tyunknown_ tybot_) (arr_ tyunknown_ tyunknown_)
---   with dup (arr_ tyunknown_ tybot_)
---   using _eqMeet else _toStrMeet in
---
--- utest applyBoth meetType (arr_ tybot_ tyunknown_) (arr_ tyunknown_ tyunknown_)
---   with dup (arr_ tyunknown_ tyunknown_)
---   using _eqMeet else _toStrMeet in
---
--- let arr_ = lam cs. lam e. tyarrowXe_ tyunknown_ tyunknown_ cs e in
--- utest subtype (arr_ dtcStar _D) (arr_ dtcStar _D) with true in
--- utest subtype (arr_ dtcStar _D) (arr_ dtcStar _R) with true in
--- utest subtype (arr_ dtcStar _R) (arr_ dtcStar _D) with false in
--- utest subtype (arr_ dtcStar _D) (arr_ dtcStar _D) with true in
---
--- utest applyBoth joinType (arr_ dtcStar _D) (arr_ dtcStar _D)
---   with dup (Some (arr_ dtcStar _D))
---   using _eqJoin else _toStrJoin in
---
--- utest applyBoth joinType (arr_ dtcStar _R) (arr_ dtcStar _D)
---   with dup (Some (arr_ dtcStar _R))
---   using _eqJoin else _toStrJoin in
---
--- utest applyBoth joinType (arr_ [] _D) (arr_ dtcStar _D)
---   with dup (Some (arr_ [] _D))
---   using _eqJoin else _toStrJoin in
---
--- utest applyBoth joinType (arr_ [] _D) (arr_ [_A] _D)
---   with dup (Some (arr_ [_A] _D))
---   using _eqJoin else _toStrJoin in
---
--- utest applyBoth joinType (arr_ [_C] _D) (arr_ [_A, _P] _D)
---   with dup (Some (arr_ [_C, _P,_A] _D))
---   using _eqJoin else _toStrJoin in
---
--- utest applyBoth meetType (arr_ dtcStar _D) (arr_ dtcStar _D)
---   with dup (arr_ dtcStar _D)
---   using _eqMeet else _toStrMeet in
---
--- utest applyBoth meetType (arr_ dtcStar _R) (arr_ dtcStar _D)
---   with dup (arr_ dtcStar _D)
---   using _eqMeet else _toStrMeet in
---
--- utest applyBoth meetType (arr_ [] _D) (arr_ dtcStar _D)
---   with dup (arr_ dtcStar _D)
---   using _eqMeet else _toStrMeet in
---
--- utest applyBoth meetType (arr_ [_A] _D) (arr_ [_C,_P,_A] _D)
---   with dup (arr_ [_A] _D)
---   using _eqMeet else _toStrMeet in
---
--- utest applyBoth meetType (arr_ [_C] _D) (arr_ [_A, _P] _D)
---   with dup (arr_ dtcStar _D)
---   using _eqMeet else _toStrMeet in
---
--- -- ┌────────────┐
--- -- │ Test TySeq │
--- -- └────────────┘
---
--- -- Utils
---
--- utest eraseDecorationsType (tyseq_ (tyfloatX_ dtcStar)) with tyseq_ tyfloat_
---   using eqType in
---
--- -- Reg
---
--- utest leqTypeX (tyseq_ (tyfloatX_ dtcStar)) [_A] with true in
--- utest leqTypeX (tyseq_ (tyfloatX_ [_A])) dtcStar with false in
---
--- utest mulXType [_P] (tyseq_ (tyfloatc_ _A)) with tyseq_ (tyfloatc_ _P)
---   using eqType in
---
--- let arr_ = tyarrowXe_ tyunknown_ tyunknown_ [_C, _P] _D in
---
--- utest tildeXType dtcStar (tyseq_ arr_) with true in
--- utest tildeXType (dtcXDown _C) (tyseq_ arr_) with false in
---
--- -- Subtyping
---
--- utest subtype (tyseq_ tyunknown_) (tyseq_ tyunknown_) with true in
--- utest applyBoth subtype (tyseq_ tyunknown_) tyunknown_ with dup false in
--- utest subtype (tyseq_ tybot_) (tyseq_ tyunknown_) with true in
--- utest subtype (tyseq_ tyunknown_) (tyseq_ tybot_) with false in
---
--- utest applyBoth joinType (tyseq_ tyunknown_) (tyseq_ tyunknown_)
---   with dup (Some (tyseq_ tyunknown_))
---   using _eqJoin else _toStrJoin in
---
--- utest applyBoth joinType (tyseq_ tyunknown_) tyunknown_
---   with dup (None ())
---   using _eqJoin else _toStrJoin in
---
--- utest applyBoth joinType (tyseq_ tybot_) (tyseq_ tyunknown_)
---   with dup (Some (tyseq_ tyunknown_))
---   using _eqJoin else _toStrJoin in
---
--- utest applyBoth joinType (tyseq_ (tyseq_ tybot_)) (tyseq_ tyunknown_)
---   with dup (None ())
---   using _eqJoin else _toStrJoin in
---
--- utest applyBoth meetType (tyseq_ tyunknown_) (tyseq_ tyunknown_)
---   with dup (tyseq_ tyunknown_)
---   using _eqMeet else _toStrMeet in
---
--- utest applyBoth meetType (tyseq_ tyunknown_) tyunknown_
---   with dup tybot_
---   using _eqMeet else _toStrMeet in
---
--- utest applyBoth meetType (tyseq_ tybot_) (tyseq_ tyunknown_)
---   with dup (tyseq_ tybot_)
---   using _eqMeet else _toStrMeet in
---
--- utest applyBoth meetType (tyseq_ tyunknown_) tyunknown_
---   with dup tybot_
---   using _eqMeet else _toStrMeet in
---
--- -- ┌───────────────┐
--- -- │ Test TyRecord │
--- -- └───────────────┘
---
--- -- Utils
---
--- utest eraseDecorationsType (tytuple_ [tyunknown_, tyfloatX_ dtcStar])
---   with tytuple_ [tyunknown_, tyfloat_]
---   using eqType in
---
--- -- Reg
---
--- utest leqTypeX (tytuple_ [tyfloatX_ dtcStar, tyfloatc_ _C]) (dtcXDown _A)
---   with true in
---
--- utest leqTypeX (tytuple_ [tyfloatX_ dtcStar, tyfloatc_ _A]) dtcStar
---   with false in
---
--- utest mulXType [_P] (tytuple_ [tyfloatX_ dtcStar, tyfloatc_ _A])
---   with tytuple_ [tyfloatX_ dtcStar, tyfloatc_ _P]
---   using eqType else utestDefaultToString type2str type2str in
---
--- let arr_ = tyarrowXe_ tyunknown_ tyunknown_ [_C, _P] _D in
---
--- utest
---   tildeXType dtcStar (tytuple_ [tyfloatX_ dtcStar , arr_])
---   with true in
---
--- utest
---   tildeXType (dtcXDown _C) (tytuple_ [tyfloatX_ dtcStar , arr_])
---   with false in
---
--- -- Subtyping
---
--- utest applyBoth subtype (tytuple_ []) tyunknown_ with dup false in
---
--- utest subtype (tytuple_ [tyunknown_, tybot_]) (tytuple_ [tybot_, tyunknown_])
---   with false in
---
--- utest
---   subtype
---     (tytuple_ [tybot_, tybot_])
---     (tytuple_ [tybot_, tyunknown_])
---   with true in
---
--- utest applyBoth joinType (tytuple_ [tyunknown_]) (tytuple_ [tyunknown_])
---   with dup (Some (tytuple_ [tyunknown_]))
---   using _eqJoin else _toStrJoin in
---
--- utest applyBoth joinType (tytuple_ [tyunknown_]) tyunknown_
---   with dup (None ())
---   using _eqJoin else _toStrJoin in
---
--- utest
---   applyBoth joinType
---     (tytuple_ [tybot_, tybot_])
---     (tytuple_ [tybot_, tyunknown_])
---   with dup (Some (tytuple_ [tybot_, tyunknown_]))
---   using _eqJoin else _toStrJoin in
---
--- utest applyBoth meetType (tytuple_ [tyunknown_]) (tytuple_ [tyunknown_])
---   with dup (tytuple_ [tyunknown_])
---   using _eqMeet else _toStrMeet in
---
--- utest applyBoth meetType (tytuple_ [tyunknown_]) tyunknown_
---   with dup tybot_
---   using _eqMeet else _toStrMeet in
---
--- utest
---   applyBoth meetType
---     (tytuple_ [tybot_, tybot_])
---     (tytuple_ [tybot_, tyunknown_])
---   with dup (tytuple_ [tybot_, tybot_])
---   using _eqMeet else _toStrMeet in
---
--- -- ┌───────────────────────────┐
--- -- │ Additional mulXType Tests │
--- -- └───────────────────────────┘
---
--- let _toStrType = utestDefaultToString type2str type2str in
---
--- utest mulXType dtcPC (tyfloatc_ _A) with tyfloatX_ dtcPC
---   using eqType else _toStrType in
+-- ┌────────────┐
+-- │ Test TyBot │
+-- └────────────┘
+
+-- Utils
+
+utest eqType tybot_ tybot_ with true in
+utest applyBoth eqType tybot_ tyunknown_ with (false, false) in
+
+utest eraseDecorationsType tybot_ with tyunknown_ using eqType in
+
+-- Subtyping
+
+utest applyBoth subtype tybot_ tyunknown_ with (true, false) in
+
+utest applyBoth joinType tybot_ tyunknown_ with dup (Some tyunknown_)
+  using _eqJoin in
+
+utest applyBoth meetType tybot_ tyunknown_ with dup tybot_ using _eqMeet in
+
+-- ┌───────────────┐
+-- │ Test TyFloatC │
+-- └───────────────┘
+
+-- Utils
+
+utest cartesian (lam c. lam d. eqType (tyfloatc_ c) (tyfloatc_ d)) dtcReg dtcReg with
+  [ [true,  false, false]
+  , [false, true,  false]
+  , [false, false, true]
+  ] in
+
+utest map (lam c. eraseDecorationsType (tyfloatc_ c)) dtcReg
+  with create 3 (lam. tyfloat_)
+  using eqSeq eqType in
+
+-- Subtyping
+
+let allValidFloatTys =
+  join [[tyfloatX_ []], map (lam c. tyfloatc_ c) dtcReg, [tyfloatX_ dtcPC]] in
+
+let tys = snoc allValidFloatTys tyunknown_ in
+let lbls = ["{}", "C", "P", "A", "PC", "Ukn"] in
+let _matrixToString =
+  matrixToString lbls (cons "  " lbls) (lam x. if x then "T" else "F") in
+
+utest cartesian subtype tys tys with
+  -- {}      C      P      A      PC     Ukn
+  [ [true,  true,  true,  true,  true,  false]    -- {}
+  , [false, true,  false, true,  true,  false]    -- C
+  , [false, false, true,  true,  true,  false]    -- P
+  , [false, false, false, true,  false, false]    -- A
+  , [false, false, false, true,  true,  false]    -- PC
+  , [false, false, false, false, false, true]     -- Ukn
+  ]
+  using eqMatrix eqBool
+else utestDefaultToString _matrixToString _matrixToString in
+
+let _matrixToString =
+  matrixToString lbls (cons "  " lbls) (optionMapOr "None" type2str) in
+
+utest cartesian joinType tys tys with
+  -- {}                       C                       P                       A                    PC                      Ukn
+  [ [Some (tyfloatX_ []),    Some (tyfloatc_ _C),    Some (tyfloatc_ _P),    Some (tyfloatc_ _A), Some (tyfloatX_ dtcPC), None ()]         -- {}
+  , [Some (tyfloatc_ _C),    Some (tyfloatc_ _C),    Some (tyfloatX_ dtcPC), Some (tyfloatc_ _A), Some (tyfloatX_ dtcPC), None ()]         -- C
+  , [Some (tyfloatc_ _P),    Some (tyfloatX_ dtcPC), Some (tyfloatc_ _P),    Some (tyfloatc_ _A), Some (tyfloatX_ dtcPC), None ()]         -- P
+  , [Some (tyfloatc_ _A),    Some (tyfloatc_ _A),    Some (tyfloatc_ _A),    Some (tyfloatc_ _A), Some (tyfloatc_ _A),    None ()]         -- A
+  , [Some (tyfloatX_ dtcPC), Some (tyfloatX_ dtcPC), Some (tyfloatX_ dtcPC), Some (tyfloatc_ _A), Some (tyfloatX_ dtcPC), None ()]         -- PC
+  , [None (),                None (),                None (),                None (),             None (),                Some tyunknown_] -- Ukn
+  ]
+  using eqMatrix (optionEq eqType)
+else utestDefaultToString _matrixToString _matrixToString in
+
+let _matrixToString =
+  matrixToString lbls (cons "  " lbls) type2str in
+
+utest cartesian meetType tys tys with
+  -- {}             C             P             A                PC               Ukn
+  [ [tyfloatX_ [], tyfloatX_ [], tyfloatX_ [], tyfloatX_ [],    tyfloatX_ [],    tybot_]         -- {}
+  , [tyfloatX_ [], tyfloatc_ _C, tyfloatX_ [], tyfloatc_ _C,    tyfloatc_ _C,    tybot_]         -- C
+  , [tyfloatX_ [], tyfloatX_ [], tyfloatc_ _P, tyfloatc_ _P,    tyfloatc_ _P,    tybot_]         -- P
+  , [tyfloatX_ [], tyfloatc_ _C, tyfloatc_ _P, tyfloatc_ _A,    tyfloatX_ dtcPC, tybot_]         -- A
+  , [tyfloatX_ [], tyfloatc_ _C, tyfloatc_ _P, tyfloatX_ dtcPC, tyfloatX_ dtcPC, tybot_]         -- PC
+  , [tybot_,       tybot_,       tybot_,       tybot_,          tybot_,          tyunknown_]     -- Ukn
+  ]
+  using eqMatrix eqType
+else utestDefaultToString _matrixToString _matrixToString in
+
+-- ┌────────────────┐
+-- │ Test TyArrowCE │
+-- └────────────────┘
+
+-- Utils
+
+utest
+  cartesian
+    (lam e. lam f.
+      let arr = tyarrowXe_ tyunknown_ tyunknown_  [] in
+      eqType (arr e) (arr f))
+    dtcEff dtcEff with
+  [ [true,  false]
+  , [false, true]
+  ] in
+
+let arr_ = lam cs. tyarrowXe_ tyunknown_ tyunknown_ cs _D in
+
+utest
+  cartesian
+    (lam c. lam d. eqType (arr_ (dtcXDown c)) (arr_ (dtcXDown d))) dtcReg dtcReg
+  with
+  [ [true,  false, false]
+  , [false, true,  false]
+  , [false, false, true]
+  ] in
+
+-- Subtyping
+
+let arr_ = lam from. lam to. tyarrowXe_ from to [] _D in
+utest subtype (arr_ tyunknown_ tyunknown_) (arr_ tyunknown_ tyunknown_) with true in
+utest subtype (arr_ tyunknown_ tybot_) (arr_ tyunknown_ tyunknown_) with true in
+utest subtype (arr_ tyunknown_ tyunknown_) (arr_ tybot_ tyunknown_) with true in
+utest subtype (arr_ tybot_ tyunknown_) (arr_ tyunknown_ tyunknown_) with false in
+utest subtype (arr_ tyunknown_ tyunknown_) (arr_ tyunknown_ tybot_) with false in
+
+utest applyBoth joinType (arr_ tyunknown_ tyunknown_) tyunknown_
+  with dup (None ())
+  using _eqJoin else _toStrJoin in
+
+utest applyBoth joinType (arr_ tyunknown_ tyunknown_) (arr_ tyunknown_ tyunknown_)
+  with dup (Some (arr_ tyunknown_ tyunknown_))
+  using _eqJoin else _toStrJoin in
+
+utest applyBoth joinType (arr_ tyunknown_ tybot_) (arr_ tyunknown_ tyunknown_)
+  with dup (Some (arr_ tyunknown_ tyunknown_))
+  using _eqJoin else _toStrJoin in
+
+utest applyBoth joinType (arr_ tybot_ tyunknown_) (arr_ tyunknown_ tyunknown_)
+  with dup (Some (arr_ tybot_ tyunknown_))
+  using _eqJoin else _toStrJoin in
+
+utest applyBoth meetType (arr_ tyunknown_ tyunknown_) tyunknown_
+  with dup tybot_
+  using _eqMeet else _toStrMeet in
+
+utest applyBoth meetType (arr_ tyunknown_ tyunknown_) (arr_ tyunknown_ tyunknown_)
+  with dup (arr_ tyunknown_ tyunknown_)
+  using _eqMeet else _toStrMeet in
+
+utest applyBoth meetType (arr_ tyunknown_ tybot_) (arr_ tyunknown_ tyunknown_)
+  with dup (arr_ tyunknown_ tybot_)
+  using _eqMeet else _toStrMeet in
+
+utest applyBoth meetType (arr_ tybot_ tyunknown_) (arr_ tyunknown_ tyunknown_)
+  with dup (arr_ tyunknown_ tyunknown_)
+  using _eqMeet else _toStrMeet in
+
+let arr_ = lam cs. lam e. tyarrowXe_ tyunknown_ tyunknown_ cs e in
+utest subtype (arr_ [] _D) (arr_ [] _D) with true in
+utest subtype (arr_ [] _D) (arr_ [] _R) with true in
+utest subtype (arr_ [] _R) (arr_ [] _D) with false in
+utest subtype (arr_ [] _D) (arr_ [] _D) with true in
+
+utest applyBoth joinType (arr_ [] _D) (arr_ [] _D)
+  with dup (Some (arr_ [] _D))
+  using _eqJoin else _toStrJoin in
+
+utest applyBoth joinType (arr_ [] _R) (arr_ [] _D)
+  with dup (Some (arr_ [] _R))
+  using _eqJoin else _toStrJoin in
+
+utest applyBoth joinType (arr_ [] _D) (arr_ [] _D)
+  with dup (Some (arr_ [] _D))
+  using _eqJoin else _toStrJoin in
+
+utest applyBoth joinType (arr_ [] _D) (arr_ [_A] _D)
+  with dup (Some (arr_ [_A] _D))
+  using _eqJoin else _toStrJoin in
+
+utest applyBoth joinType (arr_ [_C] _D) (arr_ [_A, _P] _D)
+  with dup (Some (arr_ [_C, _P,_A] _D))
+  using _eqJoin else _toStrJoin in
+
+utest applyBoth meetType (arr_ [] _D) (arr_ [] _D)
+  with dup (arr_ [] _D)
+  using _eqMeet else _toStrMeet in
+
+utest applyBoth meetType (arr_ [] _R) (arr_ [] _D)
+  with dup (arr_ [] _D)
+  using _eqMeet else _toStrMeet in
+
+utest applyBoth meetType (arr_ [] _D) (arr_ [] _D)
+  with dup (arr_ [] _D)
+  using _eqMeet else _toStrMeet in
+
+utest applyBoth meetType (arr_ [_A] _D) (arr_ [_C,_P,_A] _D)
+  with dup (arr_ [_A] _D)
+  using _eqMeet else _toStrMeet in
+
+utest applyBoth meetType (arr_ [_C] _D) (arr_ [_A, _P] _D)
+  with dup (arr_ [] _D)
+  using _eqMeet else _toStrMeet in
+
+-- ┌────────────┐
+-- │ Test TySeq │
+-- └────────────┘
+
+-- Utils
+
+utest eraseDecorationsType (tyseq_ (tyfloatX_ [])) with tyseq_ tyfloat_
+  using eqType in
+
+-- Subtyping
+
+utest subtype (tyseq_ tyunknown_) (tyseq_ tyunknown_) with true in
+utest applyBoth subtype (tyseq_ tyunknown_) tyunknown_ with dup false in
+utest subtype (tyseq_ tybot_) (tyseq_ tyunknown_) with true in
+utest subtype (tyseq_ tyunknown_) (tyseq_ tybot_) with false in
+
+utest applyBoth joinType (tyseq_ tyunknown_) (tyseq_ tyunknown_)
+  with dup (Some (tyseq_ tyunknown_))
+  using _eqJoin else _toStrJoin in
+
+utest applyBoth joinType (tyseq_ tyunknown_) tyunknown_
+  with dup (None ())
+  using _eqJoin else _toStrJoin in
+
+utest applyBoth joinType (tyseq_ tybot_) (tyseq_ tyunknown_)
+  with dup (Some (tyseq_ tyunknown_))
+  using _eqJoin else _toStrJoin in
+
+utest applyBoth joinType (tyseq_ (tyseq_ tybot_)) (tyseq_ tyunknown_)
+  with dup (None ())
+  using _eqJoin else _toStrJoin in
+
+utest applyBoth meetType (tyseq_ tyunknown_) (tyseq_ tyunknown_)
+  with dup (tyseq_ tyunknown_)
+  using _eqMeet else _toStrMeet in
+
+utest applyBoth meetType (tyseq_ tyunknown_) tyunknown_
+  with dup tybot_
+  using _eqMeet else _toStrMeet in
+
+utest applyBoth meetType (tyseq_ tybot_) (tyseq_ tyunknown_)
+  with dup (tyseq_ tybot_)
+  using _eqMeet else _toStrMeet in
+
+utest applyBoth meetType (tyseq_ tyunknown_) tyunknown_
+  with dup tybot_
+  using _eqMeet else _toStrMeet in
+
+-- ┌───────────────┐
+-- │ Test TyRecord │
+-- └───────────────┘
+
+-- Utils
+
+utest eraseDecorationsType (tytuple_ [tyunknown_, tyfloatX_ []])
+  with tytuple_ [tyunknown_, tyfloat_]
+  using eqType in
+
+-- Subtyping
+
+utest applyBoth subtype (tytuple_ []) tyunknown_ with dup false in
+
+utest subtype (tytuple_ [tyunknown_, tybot_]) (tytuple_ [tybot_, tyunknown_])
+  with false in
+
+utest
+  subtype
+    (tytuple_ [tybot_, tybot_])
+    (tytuple_ [tybot_, tyunknown_])
+  with true in
+
+utest applyBoth joinType (tytuple_ [tyunknown_]) (tytuple_ [tyunknown_])
+  with dup (Some (tytuple_ [tyunknown_]))
+  using _eqJoin else _toStrJoin in
+
+utest applyBoth joinType (tytuple_ [tyunknown_]) tyunknown_
+  with dup (None ())
+  using _eqJoin else _toStrJoin in
+
+utest
+  applyBoth joinType
+    (tytuple_ [tybot_, tybot_])
+    (tytuple_ [tybot_, tyunknown_])
+  with dup (Some (tytuple_ [tybot_, tyunknown_]))
+  using _eqJoin else _toStrJoin in
+
+utest applyBoth meetType (tytuple_ [tyunknown_]) (tytuple_ [tyunknown_])
+  with dup (tytuple_ [tyunknown_])
+  using _eqMeet else _toStrMeet in
+
+utest applyBoth meetType (tytuple_ [tyunknown_]) tyunknown_
+  with dup tybot_
+  using _eqMeet else _toStrMeet in
+
+utest
+  applyBoth meetType
+    (tytuple_ [tybot_, tybot_])
+    (tytuple_ [tybot_, tyunknown_])
+  with dup (tytuple_ [tybot_, tybot_])
+  using _eqMeet else _toStrMeet in
 
 -- ┌────────────┐
 -- │ TEST TERMS │
@@ -2462,8 +2183,8 @@ let onFail = utestDefaultToString toString toString in
 -- Shorthand types
 let arrce = lam ps. lam ret. foldr (lam t. lam to. tyarrowXe_ t.0 to t.1 t.2) ret ps in
 let arrc = lam ps. arrce (map (lam p. (p.0, p.1, _D)) ps) in
-let arre = lam ps. arrce (map (lam p. (p.0, dtcStar, p.1)) ps) in
-let arr = lam ps. arrce (map (lam p. (p, dtcStar, _D)) ps) in
+let arre = lam ps. arrce (map (lam p. (p.0, [], p.1)) ps) in
+let arr = lam ps. arrce (map (lam p. (p, [], _D)) ps) in
 let flt = tyfloatc_ in
 let fltX = tyfloatX_ in
 
@@ -2527,7 +2248,7 @@ utest
 utest
   _typeOf
     [ (_f, arrc [(flt _A, [_P])] (flt _A))
-    , (_x, fltX dtcStar)
+    , (_x, fltX [])
     ]
     (f [x])
   with Right (_D, flt _P)
@@ -2617,7 +2338,7 @@ utest
 utest
   _typeOf
     [ (_f, arrc [(arrc [(flt _P, [_P])] (flt _A), [_A])] (flt _A))
-    , (_x, arrc [(fltX dtcStar, [])] (flt _P))
+    , (_x, arrc [(fltX [], [])] (flt _P))
     ]
     (f [x])
   with Left [DTCArgError (NoInfo (), (None ()))]
@@ -2820,7 +2541,7 @@ let _test = lam e.
     ]
     (map_ x y) in
 
-let _expected = lam e. Right (e, tyseq_ (fltX dtcStar)) in
+let _expected = lam e. Right (e, tyseq_ (fltX [])) in
 
 utest _test _D with _expected _D using eq else onFail in
 utest _test _R with _expected _R using eq else onFail in
@@ -2840,7 +2561,7 @@ let _test = lam e1. lam e2.
     ]
     (mapi_ x y) in
 
-let _expected = lam e. Right (e, tyseq_ (fltX dtcStar)) in
+let _expected = lam e. Right (e, tyseq_ (fltX [])) in
 
 utest _test _D _D with _expected _D using eq else onFail in
 utest _test _R _D with _expected _R using eq else onFail in
@@ -2948,12 +2669,12 @@ utest
 let _test = lam e1. lam e2.
   _typeOf
     [ (_x, arre [(flt _C, e1), (flt _A, e2)] (flt _C))
-    , (_y, fltX dtcStar)
+    , (_y, fltX [])
     , (_z, tyseq_ (flt _P))
     ]
     (foldl_ x y z) in
 
-let _expected = lam e. Right (e, fltX dtcStar) in
+let _expected = lam e. Right (e, fltX []) in
 
 utest _test _D _D with _expected _D using eq else onFail in
 utest _test _R _D with _expected _R using eq else onFail in
@@ -2962,7 +2683,7 @@ utest _test _R _R with _expected _R using eq else onFail in
 utest
   _typeOf
     [ (_x, arr [tyint_, flt _A] (flt _C))
-    , (_y, fltX dtcStar)
+    , (_y, fltX [])
     , (_z, tyseq_ (flt _P))
     ]
     (foldl_ x y z)
@@ -2971,7 +2692,7 @@ utest
 utest
   _typeOf
     [ (_x, arr [flt _C, tyint_] (flt _C))
-    , (_y, fltX dtcStar)
+    , (_y, fltX [])
     , (_z, tyseq_ (flt _P))
     ]
     (foldl_ x y z)
@@ -2980,7 +2701,7 @@ utest
 utest
   _typeOf
     [ (_x, arre [(flt _C, _D), (flt _A, _D)] (flt _C))
-    , (_y, fltX dtcStar)
+    , (_y, fltX [])
     , (_z, tyint_)
     ]
     (foldl_ x y z)
@@ -2990,12 +2711,12 @@ utest
 let _test = lam e1. lam e2.
   _typeOf
     [ (_x, arre [(flt _A, e1), (flt _C, e2)] (flt _C))
-    , (_y, fltX dtcStar)
+    , (_y, fltX [])
     , (_z, tyseq_ (flt _P))
     ]
     (foldr_ x y z) in
 
-let _expected = lam e. Right (e, fltX dtcStar) in
+let _expected = lam e. Right (e, fltX []) in
 
 utest _test _D _D with _expected _D using eq else onFail in
 utest _test _R _D with _expected _R using eq else onFail in
@@ -3004,7 +2725,7 @@ utest _test _R _R with _expected _R using eq else onFail in
 utest
   _typeOf
     [ (_x, arr [flt _A, tyint_] (flt _C))
-    , (_y, fltX dtcStar)
+    , (_y, fltX [])
     , (_z, tyseq_ (flt _P))
     ]
     (foldr_ x y z)
@@ -3013,7 +2734,7 @@ utest
 utest
   _typeOf
     [ (_x, arr [flt _A, flt _C] tyint_)
-    , (_y, fltX dtcStar)
+    , (_y, fltX [])
     , (_z, tyseq_ (flt _P))
     ]
     (foldr_ x y z)
@@ -3022,7 +2743,7 @@ utest
 utest
   _typeOf
     [ (_x, arr [tyint_, flt _C] (flt _C))
-    , (_y, fltX dtcStar)
+    , (_y, fltX [])
     , (_z, tyseq_ (flt _P))
     ]
     (foldr_ x y z)
@@ -3031,7 +2752,7 @@ utest
 utest
   _typeOf
     [ (_x, arre [(flt _A, _D), (flt _C, _D)] (flt _C))
-    , (_y, fltX dtcStar)
+    , (_y, fltX [])
     , (_z, tyint_)
     ]
     (foldr_ x y z)
@@ -3046,7 +2767,7 @@ iter
         (_y, arre [(tyint_, e)] (flt _A))
      ] (appf2_ (uconst_ c) x y)
     in
-    let _expected = lam e. Right (e, tyseq_ (fltX dtcStar)) in
+    let _expected = lam e. Right (e, tyseq_ (fltX [])) in
     utest _test _D with _expected _D using eq else onFail in
     utest _test _R with _expected _R using eq else onFail in
     utest
@@ -3125,7 +2846,7 @@ utest
 -- │ Test Intrinsics │
 -- └─────────────────┘
 
-utest _typeOf [] (float_ 0.) with Right (_D, fltX dtcStar)
+utest _typeOf [] (float_ 0.) with Right (_D, fltX [])
   using eq else onFail in
 
 utest _typeOf [] (int_ 0) with Right (_D, tyint_)
@@ -3145,7 +2866,7 @@ iter
     utest
       _typeOf
         [ (_x, flt _A)
-        , (_y, fltX dtcStar)
+        , (_y, fltX [])
         ]
         (appf2_ (uconst_ c) x y)
       with Right (_D, flt _A)
@@ -3268,8 +2989,8 @@ iter
       with Left [DTCArgError (NoInfo (), None ())]
       using eq else onFailConst c in
 
-    utest _typeOf [ (_x, fltX dtcStar)] (appf1_ (uconst_ c) x)
-      with Right (_D, fltX dtcStar)
+    utest _typeOf [ (_x, fltX [])] (appf1_ (uconst_ c) x)
+      with Right (_D, fltX [])
       using eq else onFailConst c in
 
     ())

@@ -295,13 +295,11 @@ lang DPPLParser =
   | "ModA" -> Some(1, lam seq. TyModC { c = ModA (), info = info, ty = get seq 0 })
   | "ModP" -> Some(1, lam seq. TyModC { c = ModP (), info = info, ty = get seq 0 })
   | "ModC" -> Some(1, lam seq. TyModC { c = ModC (), info = info, ty = get seq 0 })
-  | "ModM" -> Some(1, lam seq. TyModC { c = ModM (), info = info, ty = get seq 0 })
   | "ModR" -> Some(1, lam seq. TyModE { e = ModR (), info = info, ty = get seq 0 })
   | "FloatA" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcXDown (ModA ()) })
   | "FloatPC" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcPC })
   | "FloatP" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcXDown (ModP ()) })
   | "FloatC" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcXDown (ModC ()) })
-  | "FloatM" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcXDown (ModM ()) })
 
   sem decorateTypesExn : Expr -> Expr
   sem decorateTypesExn =| tm ->
@@ -319,7 +317,7 @@ lang DPPLParser =
 
   sem decorateTypesH : Type -> Type
   sem decorateTypesH =
-  | TyFloat r -> TyFloatC { info = r.info, cs = dtcXDown (ModA ()) }
+  | TyFloat r -> TyFloatC { info = r.info, cs = [] }
   | TyArrow r ->
     match gatherTyCEs r.to with (cs, e, to) in
     let ty = TyArrowCE
