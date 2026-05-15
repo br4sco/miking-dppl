@@ -812,7 +812,7 @@ lang DTCTypeError = Ast + ConstAst + DTCEnv + DTCFloatTypeAst + PrettyPrint
   | DTCUnuspportedTermError (Info, Option Expr)
   | DTCInvalidContextError (Info, Option (Name))
   --   | DTCContextConstraintError (Info, Option (DTCReg,  DTCEnv))
-  --   | DTCHigherOrderTypeError (Info, Option Type)
+  | DTCHigherOrderTypeError (Info, Option Type)
   --   | DTCTypeConstraintErrorR (Info, Option (DTCReg, Type))
   | DTCPartiallyAppliedConst (Info, Option Const)
 
@@ -831,7 +831,7 @@ lang DTCTypeError = Ast + ConstAst + DTCEnv + DTCFloatTypeAst + PrettyPrint
   | DTCUnuspportedTermError (i, _)
   | DTCInvalidContextError (i, _) -> i
   --   | DTCContextConstraintError (i, _) -> i
-  --   | DTCHigherOrderTypeError (i, _) -> i
+  | DTCHigherOrderTypeError (i, _) -> i
   --   | DTCTypeConstraintErrorR (i, _) -> i
   | DTCPartiallyAppliedConst (i, _) -> i
 
@@ -850,7 +850,7 @@ lang DTCTypeError = Ast + ConstAst + DTCEnv + DTCFloatTypeAst + PrettyPrint
   | DTCUnuspportedTermError _ -> "UnuspportedTermError"
   | DTCInvalidContextError _ -> "InvalidContextError"
   --   | DTCContextConstraintError _ -> "ContextConstraintError"
-  --   | DTCHigherOrderTypeError _ -> "HigherOrderTypeError"
+  | DTCHigherOrderTypeError _ -> "HigherOrderTypeError"
   --   | DTCTypeConstraintErrorR _ -> "TypeConstraintErrorR"
   | DTCPartiallyAppliedConst _ -> "PartiallyAppliedConst"
 
@@ -882,7 +882,7 @@ lang DTCTypeError = Ast + ConstAst + DTCEnv + DTCFloatTypeAst + PrettyPrint
        , "FloatC -> FloatAⁿ ->{C,A} FloatAⁿ"
        ]
        [type2str ty])
-  | DTCDiffFnError (info, Some (c, ty)) ->
+  | DTCDiffFnError (info, Some ty) ->
     (info,
      _typeErrorToMsg2
        [ "Determinstic function isomorphic to:"
@@ -911,11 +911,11 @@ lang DTCTypeError = Ast + ConstAst + DTCEnv + DTCFloatTypeAst + PrettyPrint
 --       "* The type context ", dtcEnvToString env, "\n",
 --       "* is not less than or equal to ", dtcRegToString c
 --     ])
---   | DTCHigherOrderTypeError (info, Some ty) ->
---     (info, join [
---       "* A higher order type is not allowed here but got:\n",
---       type2str ty
---     ])
+  | DTCHigherOrderTypeError (info, Some ty) ->
+    (info, join [
+      "* A higher order type is not allowed here but got:\n",
+      type2str ty
+    ])
 --   | DTCTypeConstraintErrorR (info, Some (c, ty)) ->
 --     (info, join [
 --       "* Type constriant error: ",
@@ -1234,40 +1234,47 @@ lang DTCTypeOfMatch = MatchAst + DTCPatTypeCheck + DTCTypeOfBase
                     setSubtract thn.fv (setOfKeys patEnv),
                     els.fv ])
                 (joinType thn.ty els.ty))))
---  | TmMatch r -> typeOfBoolStrict env r
+  | TmMatch r -> typeOfBoolStrict env r
 
---   -- NOTE(oerikss, 2025-10-14): We need stricter typing if it is possible that
---   -- the match includes a condition on floating point values.
---   sem typeOfBoolStrict env =
---   | r ->
---     result.bind (typeOfHPromote env r.target) (lam target.
---       result.bind
---         (dtcTypeCheckPat env (mapEmpty nameCmp) (target.ty, r.pat))
---         (lam patEnv.
---           let thnEnv = dtcEnvBatchInsert patEnv env in
---           result.bind2 (typeOfHPromote thnEnv r.thn) (typeOfHPromote env r.els)
---             (lam thn. lam els.
---               if isFirstOrder thn.ty then
---                 if isFirstOrder els.ty then
---                   optionMapOr
---                     (result.err (DTCJoinError (r.info, Some (thn.ty, els.ty))))
---                     (lam ty.
---                       let tyP = setC (ModP ()) ty in
---                       optionMapOr
---                         (result.err (DTCJoinError (r.info, Some (tyP, ty))))
---                         (lam ty.
---                           resultOK [target.e, thn.e, els.e] ty [
---                             target.fv,
---                             setSubtract thn.fv (setOfKeys patEnv),
---                             els.fv ])
---                         (joinType (ty, tyP)))
---                     (joinType (thn.ty, els.ty))
---                 else
---                   result.err
---                     (DTCHigherOrderTypeError (infoTm r.els, Some els.ty))
---               else
---                 result.err
---                   (DTCHigherOrderTypeError (infoTm r.thn, Some thn.ty)))))
+  -- NOTE(oerikss, 2025-10-14): We need stricter typing if it is possible that
+  -- the match includes a condition on floating point values.
+  sem typeOfBoolStrict env =
+  | r ->
+    result.bind (typeOfH env r.target) (lam target.
+      result.bind
+        (dtcTypeCheckPat env (mapEmpty nameCmp) (target.ty, r.pat))
+        (lam patEnv.
+          let thnEnv = dtcEnvBatchInsert patEnv env in
+          result.bind2 (typeOfH thnEnv r.thn) (typeOfH env r.els)
+            (lam thn. lam els.
+              if isFirstOrder thn.ty then
+                if isFirstOrder els.ty then
+                  optionMapOr
+                    (result.err (DTCJoinError (r.info, Some (thn.ty, els.ty))))
+                    (lam ty.
+                      let tyP = withX (dtcXDown (ModP ())) ty in
+                      let fv = foldl1 setUnion
+                                 [ target.fv
+                                 , setSubtract thn.fv (setOfKeys patEnv)
+                                 , els.fv
+                                 ] in
+                      let cs = dtcEnvAccPromote (dtcEnvWeaken fv env) in
+                      optionMapOr
+                        (result.err (DTCJoinError (r.info, Some (tyP, ty))))
+                        (lam ty.
+                          result.ok
+                            { e = foldl1 dtcMule [target.e, thn.e, els.e]
+                            , ty = mulXType cs ty
+                            , fv = fv
+                            })
+                        (joinType ty tyP))
+                    (joinType thn.ty els.ty)
+                else
+                  result.err
+                    (DTCHigherOrderTypeError (infoTm r.els, Some els.ty))
+              else
+                result.err
+                  (DTCHigherOrderTypeError (infoTm r.thn, Some thn.ty)))))
 end
 
 lang DTCTypeOfInfer = Infer + DTCTypeOfBase
@@ -1650,8 +1657,8 @@ lang DTCSeqOpType = SeqOpAst + DTCTypeOfConst
          , TySeq { seqr with ty = arrr2.from }
          , tyunit_
          ])
-  | (CFoldl _
-    ,[TyArrowCE (arrr1 & {to = TyArrowCE arrr2}), _, TySeq seqr]) ->
+  | ( CFoldl _
+    , [TyArrowCE (arrr1 & {to = TyArrowCE arrr2}), _, TySeq seqr] ) ->
     let arr = foldr1 (iarr_ info) in
     result.ok
       (arr
@@ -1660,8 +1667,8 @@ lang DTCSeqOpType = SeqOpAst + DTCTypeOfConst
          , TySeq { seqr with ty = arrr2.from }
          , arrr1.from
          ])
-  | (CFoldr _
-    ,[TyArrowCE (arrr1 & {to = TyArrowCE arrr2}), _, TySeq seqr]) ->
+  | ( CFoldr _
+    , [TyArrowCE (arrr1 & {to = TyArrowCE arrr2}), _, TySeq seqr] ) ->
     let arr = foldr1 (iarr_ info) in
     result.ok
       (arr
@@ -1686,34 +1693,23 @@ lang DTCSeqOpType = SeqOpAst + DTCTypeOfConst
     result.ok (arr [tyseq, ityint_ info, ityint_ info, tyseq])
 end
 
--- lang DTCDistOpType = Dist + DTCTypeOfConst
---   -- Type-checks polymorfic constant functions over distributions
---
---   sem _distargerr tm =| ty ->
---     result.err (DTCArgError (infoTm tm, Some (tydist_ _a, ty)))
---
---   sem typeOfH env =
---   | TmApp (r & {lhs = TmConst {val = CDistEmpiricalSamples _}}) ->
---     result.bind (typeOfH env r.rhs) (lam rhs.
---       match rhs with {ty = TyDist distr} then
---         let seq = ityseq_ r.info in
---         result.ok {
---           rhs with ty = itytuple_ r.info [
---             seq distr.ty, seq (ityfloatc_ r.info (ModM ()))]
---         }
---       else _distargerr r.rhs rhs.ty)
---   | TmApp (r & {lhs = TmConst {val = CDistEmpiricalDegenerate _}}) ->
---     result.bind (typeOfH env r.rhs) (lam rhs.
---       match rhs with {ty = TyDist _} then
---         result.ok { rhs with ty = itybool_ r.info }
---       else _distargerr r.rhs rhs.ty)
---   | TmApp (r & {lhs = TmConst {
---     val = CDistEmpiricalNormConst _ | CDistEmpiricalAcceptRate _ }}) ->
---     result.bind (typeOfH env r.rhs) (lam rhs.
---       match rhs with {ty = TyDist _} then
---         result.ok { rhs with ty = ityfloatc_ r.info (ModM ()) }
---       else _distargerr r.rhs rhs.ty)
--- end
+lang DTCDistOpType = Dist + DTCTypeOfConst
+  -- Type-checks polymorfic constant functions over distributions
+
+  sem dtcConstType info =
+  | (CDistEmpiricalSamples _, [tydist & TyDist distr]) ->
+    let arr = iarr_ info in
+    let seq = ityseq_ info in
+    result.ok
+      (arr tydist (itytuple_ info [seq distr.ty, seq (ityfloatX_ info [])]))
+  | (CDistEmpiricalDegenerate _, [tydist & TyDist _]) ->
+    let arr = iarr_ info in
+    result.ok (arr tydist (itybool_ info))
+  | ( CDistEmpiricalNormConst _ | CDistEmpiricalAcceptRate _
+    , [tydist & TyDist _] ) ->
+    let arr = iarr_ info in
+    result.ok (arr tydist (ityfloatX_ info []))
+end
 
 -- ┌─────────────────────┐
 -- │ Type Check Patterns │
@@ -1749,8 +1745,7 @@ end
      dtcTypeCheckPatSeq env patEnv (map (lam pat. (tr.ty, pat)) pr.pats)
    | (ty & TySeq _, PatSeqEdge pr) ->
      let patSeqTot = lam pats.
-       PatSeqTot { pats = pats, info = pr.info, ty = pr.ty }
-     in
+       PatSeqTot { pats = pats, info = pr.info, ty = pr.ty } in
      result.bind
        (dtcTypeCheckPat env patEnv (ty, patSeqTot pr.prefix))
        (lam patEnv.
@@ -1794,8 +1789,7 @@ lang DTCTypeOf =
   -- Constants
   DTCTyConst + DTCFloatType + DTCArithFloatType + DTCElementaryFunctionsType +
   DTCCmpFloatAstType + DTCSysType + DTCSeqOpType +
-
-  -- DTCDistOpType +
+  DTCDistOpType +
 
   -- Patterns
   DTCPatTypeCheckAll
@@ -3336,6 +3330,52 @@ utest _test (flt _A) (tytuple_ [flt _A]) (flt _A)
   using eq else onFail in
 utest _test (flt _A) (flt _A) (tytuple_ [flt _A])
   with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail in
+
+-- ┌─────────┐
+-- │ Test If │
+-- └─────────┘
+
+let _test = lam ty1. lam ty2. lam ty3.
+  _typeOf
+    [ (_x, ty1)
+    , (_y, ty2)
+    , (_z, ty3)
+    ]
+    (if_ (gtf_ x (float_ 0.)) y z) in
+
+utest _test (flt _P) (flt _P) (flt _P) with Right (_D, flt _P)
+  using eq else onFail in
+
+utest _test (flt _P) (tytuple_ [flt _P]) (tytuple_ [flt _P])
+  with Right (_D, tytuple_ [flt _P])
+  using eq else onFail in
+
+utest _test (flt _P) (flt _C) (flt _P) with Right (_D, fltX dtcPC)
+  using eq else onFail in
+
+utest _test (flt _P) (flt _C) (flt _A) with Right (_D, flt _A)
+  using eq else onFail in
+
+utest _test (fltX []) (flt _C) (flt _C) with Right (_D, flt _C)
+  using eq else onFail in
+
+utest _test (fltX []) (fltX []) (fltX []) with Right (_D, fltX [])
+  using eq else onFail in
+
+utest _test (flt _P) tybool_ tybool_ with Right (_D, tybool_)
+  using eq else onFail in
+
+utest _test (flt _A) tybool_ tybool_
+  with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail in
+
+utest _test (flt _P) (flt _P) tybool_
+  with Left [DTCJoinError (NoInfo (), None ())]
+  using eq else onFail in
+
+utest _test (flt _P) tybool_ (flt _P)
+  with Left [DTCJoinError (NoInfo (), None ())]
   using eq else onFail in
 
 -- ┌───────────────────────────┐
