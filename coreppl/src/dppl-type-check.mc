@@ -398,11 +398,12 @@ lang DTCFloatTypeAst = DTCAstBase + FloatTypeAst + PrettyPrint
   sem typePrecedence = | TyFloatC _ -> 1
   sem getTypeStringCode (indent : Int) (env: PprintEnv) =
   | TyFloatC r ->
-    if dtcXEq r.cs (dtcXDown (ModC ())) then (env, "FloatC")
-    else if dtcXEq r.cs (dtcXDown (ModP ())) then (env, "FloatP")
-         else if dtcXEq r.cs (dtcXDown (ModA ())) then (env, "FloatA")
-              else if dtcXEq r.cs dtcPC then (env, "FloatPC")
-                   else (env, concat "Float" (dtcRegSetToString r.cs))
+    if null r.cs then (env, "Float")
+    else if dtcXEq r.cs (dtcXDown (ModC ())) then (env, "FloatC")
+      else if dtcXEq r.cs (dtcXDown (ModP ())) then (env, "FloatP")
+           else if dtcXEq r.cs (dtcXDown (ModA ())) then (env, "FloatA")
+                else if dtcXEq r.cs dtcPC then (env, "FloatPC")
+                     else (env, concat "Float" (dtcRegSetToString r.cs))
 
   -- ┌───────────┐
   -- │ Utilities │
@@ -804,9 +805,8 @@ lang DTCTypeError = Ast + ConstAst + DTCEnv + DTCFloatTypeAst + PrettyPrint
   | DTCJoinError (Info, Option (Type, Type))
   | DTCPatError (Info, Option Type)
   | DTCAnotError Info
-  --   | DTCSolveODEModelError (Info, Option Type)
-  | DTCDiffFnError (Info, Option (DTCReg, Type))
-  | DTCDiffFnNotRnError (Info, Option Type)
+  | DTCSolveODEModelError (Info, Option Type)
+  | DTCDiffFnError (Info, Option Type)
   | DTCPolyDistError Info
   | DTCPolyConstError Info
   | DTCUnuspportedTermError (Info, Option Expr)
@@ -824,9 +824,8 @@ lang DTCTypeError = Ast + ConstAst + DTCEnv + DTCFloatTypeAst + PrettyPrint
   | DTCJoinError (i, _)
   | DTCPatError (i, _)
   | DTCAnotError i
-  --   | DTCSolveODEModelError (i, _)
+  | DTCSolveODEModelError (i, _)
   | DTCDiffFnError (i, _)
-  | DTCDiffFnNotRnError (i, _)
   | DTCPolyDistError i
   | DTCPolyConstError i
   | DTCUnuspportedTermError (i, _)
@@ -844,9 +843,8 @@ lang DTCTypeError = Ast + ConstAst + DTCEnv + DTCFloatTypeAst + PrettyPrint
   | DTCJoinError _ -> "JoinError"
   | DTCPatError _ -> "PatError"
   | DTCAnotError _ -> "AnotError"
-  --   | DTCSolveODEModelError _ -> "SolveODEModelError"
+  | DTCSolveODEModelError _ -> "SolveODEModelError"
   | DTCDiffFnError _ -> "DiffFnError"
-  | DTCDiffFnNotRnError _ -> "DiffFnNotRnError"
   | DTCPolyDistError _ -> "PolyDistError"
   | DTCPolyConstError _ -> "PolyConstError"
   | DTCUnuspportedTermError _ -> "UnuspportedTermError"
@@ -876,28 +874,21 @@ lang DTCTypeError = Ast + ConstAst + DTCEnv + DTCFloatTypeAst + PrettyPrint
     (info, join ["* Pattern does not match type: ", type2str ty])
   | DTCAnotError info ->
     (info, join ["* Missing type annotation"])
---   | DTCSolveODEModelError (info, Some ty) ->
---     (info,
---      _typeErrorToMsg2
---        ["Determinstic function type FloatX -> T[Y] -> T,",
---         join [
---           "where T isomorfic to a vector of floats, and X = ",
---           dtcRegToString (ModA ()), " or X = ",
---           dtcRegToString (ModC ()),
---           ", and Y = ",
---           dtcRegToString (ModA ()),
---           "." ]]
---        [type2str ty])
+  | DTCSolveODEModelError (info, Some ty) ->
+    (info,
+     _typeErrorToMsg2
+       [ "Determinstic function isomorphic to:"
+       , "FloatA -> FloatAⁿ ->{C,A} FloatAⁿ or"
+       , "FloatC -> FloatAⁿ ->{C,A} FloatAⁿ"
+       ]
+       [type2str ty])
   | DTCDiffFnError (info, Some (c, ty)) ->
     (info,
      _typeErrorToMsg2
-       [ "Determinstic function isomorfic to:"
-       , "FloatAⁿ ->{M,P,A} FloatAᵐ or FloatPⁿ ->{P} FloatPᵐ"
+       [ "Determinstic function isomorphic to:"
+       , "FloatAⁿ ->{P,A} FloatAᵐ or"
+       , "FloatPⁿ ->{P} FloatPᵐ"
        ]
-       [type2str ty])
-  | DTCDiffFnError (info, Some ty) ->
-    (info,
-     _typeErrorToMsg2 [ "Function isomorfic to Floatⁿ -> Floatᵐ"]
        [type2str ty])
   | DTCPolyDistError info ->
     (info, "* Polymorfic distributions are currently not supported")
@@ -1092,8 +1083,7 @@ lang DTCTypeOfConst =
           result.bind (dtcConstType info (const, [tm.ty])) (lam constTy.
             match constTy with TyArrowCE r then
               if subtype tm.ty r.from then
-                let cs =
-                  accApp (dtcEnvAccPromote (dtcEnvWeaken tm.fv env)) r.to in
+                let cs = dtcEnvAccPromote (dtcEnvWeaken tm.fv env) in
                 result.ok
                   { e = dtcMule (effecIfApplied tm.ty) tm.e
                   , ty = mulXType cs r.to
@@ -1113,8 +1103,7 @@ lang DTCTypeOfConst =
               if subtype tm1.ty r1.from then
                 if subtype tm2.ty r2.from then
                   let fv = setUnion tm1.fv tm2.fv in
-                  let cs =
-                    accApp (dtcEnvAccPromote (dtcEnvWeaken fv env)) r2.to in
+                  let cs = dtcEnvAccPromote (dtcEnvWeaken fv env)in
                   result.ok
                     { e = foldl1 dtcMule
                             (concat (map effecIfApplied [tm1.ty, tm2.ty])
@@ -1142,8 +1131,7 @@ lang DTCTypeOfConst =
                   if subtype tm2.ty r2.from then
                     if subtype tm3.ty r3.from then
                       let fv = setUnion (setUnion tm1.fv tm2.fv) tm3.fv in
-                      let cs =
-                        accApp (dtcEnvAccPromote (dtcEnvWeaken fv env)) r3.to in
+                      let cs = dtcEnvAccPromote (dtcEnvWeaken fv env) in
                       result.ok
                         { e = foldl1 dtcMule
                                 (concat
@@ -1395,16 +1383,13 @@ lang DTCTypeOfDiff = Diff + IsIsomorficToRn + DTCTypeOfBase
     result.bind3
       (typeOfH env r.fn) (typeOfH env r.arg) (typeOfH env r.darg)
       (lam fn. lam arg. lam darg.
-        let err = lam.
-          result.err (DTCDiffFnError (infoTm r.fn, Some (ModP (), fn.ty))) in
+        let fnerr = lam.
+          result.err (DTCDiffFnError (infoTm r.fn, Some fn.ty)) in
         match fn.ty with TyArrowCE arr then
           if and (isIsomorficToRn arr.from) (isIsomorficToRn arr.to) then
             let withA = withX (dtcXDown (ModA ())) in
             let fv = foldl1 setUnion [fn.fv, arg.fv, darg.fv] in
-            let cs =
-              foldl accApp
-                (dtcEnvAccPromote (dtcEnvWeaken fv env))
-                [fn.ty, arg.ty, darg.ty] in
+            let cs = dtcEnvAccPromote (dtcEnvWeaken fv env) in
             let ok = lam.
               result.ok
                 { fv = fv
@@ -1427,65 +1412,76 @@ lang DTCTypeOfDiff = Diff + IsIsomorficToRn + DTCTypeOfBase
                           [ModP ()]
                           (ModD ()))
                   then ok ()
-                  else err ()
+                  else fnerr ()
               else
                 result.err
                   (DTCArgError (infoTm r.darg, Some (withA arr.from, darg.ty)))
             else
               result.err
                 (DTCArgError (infoTm r.arg, Some (withA arr.from, arg.ty)))
-          else result.err (DTCDiffFnNotRnError (infoTm r.fn, Some (fn.ty)))
-        else err ())
+          else fnerr ()
+        else fnerr ())
 end
 
--- -- lang DTCTypeOfSolveODE = SolveODE + IsIsomorficToRn + DTCTypeOfBase
--- --   -- sem typeOfH env =
--- --   -- | TmSolveODE r ->
--- --   --   result.bind4
--- --   --     (sfold_ODESolverMetod_Expr
--- --   --        (foldTypeOfH env)
--- --   --        (result.ok { e = ModD (), fv = setEmpty nameCmp }) r.method)
--- --   --     (typeOfH env r.model)
--- --   --     (typeOfH env r.init)
--- --   --     (typeOfH env r.endTime)
--- --   --     (lam method. lam model. lam init. lam x1.
--- --   --       match model.ty with
--- --   --         TyArrowCE (arr1 & {
--- --   --           from = TyFloatC {c = c & (ModA _ | ModC _)},
--- --   --           to = TyArrowCE (arr2 & {e = ModD _}), e = ModD _})
--- --   --       then
--- --   --         if isIsomorficToRn arr2.from then
--- --   --           let xTy = arr1.from in
--- --   --           let yTy = setC (ModA ()) arr2.from in
--- --   --           let odeRhsTy =
--- --   --             TyArrowCE {
--- --   --               arr1 with to = tyarrowce_ yTy yTy (ModA ()) (ModD ()),
--- --   --               c = ModC ()
--- --   --             }
--- --   --           in
--- --   --           let x1Ty = mulcType (ModPC ()) xTy in
--- --   --           let fv =
--- --   --             foldr1 setUnion [method.fv, model.fv, init.fv, x1.fv]
--- --   --           in
--- --   --           let promote = promote env fv in
--- --   --           if subtype (model.ty, odeRhsTy) then
--- --   --             if subtype (init.ty, tytuple_ [xTy, yTy]) then
--- --   --               if subtype (x1.ty, x1Ty) then
--- --   --                 resultOK [method.e, model.e, init.e, x1.e]
--- --   --                   (promote (setC (ModA ()) (tytuple_ [xTy, yTy]))) [fv]
--- --   --               else argErr r.endTime x1.ty x1Ty
--- --   --             else
--- --   --               argErr r.init init.ty (tytuple_ [xTy, yTy])
--- --   --           else
--- --   --             result.err
--- --   --               (DTCArgError (infoTm r.model, Some (odeRhsTy, model.ty)))
--- --   --         else
--- --   --           result.err
--- --   --             (DTCSolveODEModelError (infoTm r.model, Some model.ty))
--- --   --       else
--- --   --         result.err
--- --   --           (DTCSolveODEModelError (infoTm r.model, Some model.ty)))
--- -- end
+lang DTCTypeOfSolveODE = SolveODE + IsIsomorficToRn + DTCTypeOfBase
+  sem typeOfH env =
+  | TmSolveODE r ->
+    result.bind4
+      (sfold_ODESolverMetod_Expr
+         (foldTypeOfH env)
+         (result.ok { e = ModD (), fv = setEmpty nameCmp }) r.method)
+      (typeOfH env r.model)
+      (typeOfH env r.init)
+      (typeOfH env r.endTime)
+      (lam method. lam model. lam init. lam endTime.
+        let modelerr = lam.
+          result.err (DTCSolveODEModelError (infoTm r.model, Some model.ty)) in
+        match model.ty with
+          TyArrowCE (arr1 & { from = TyFloatC {cs = cs}, to = TyArrowCE arr2 })
+        then
+          if isIsomorficToRn arr2.from then
+            let stateTy = withX (dtcXDown (ModA ())) arr2.from in
+            let initTy = lam c. itytuple_ r.info [tyfloatc_ c, stateTy] in
+            let modelTy = lam c.
+              let cs = [ModC (), ModA ()] in
+              tyarrowXe_
+                (tyfloatc_ c)
+                (tyarrowXe_ stateTy stateTy cs (ModD ()))
+                cs (ModD ()) in
+            result.bind
+              (if dtcXEq cs (dtcXDown (ModA ())) then result.ok (ModA ())
+               else if dtcXEq cs (dtcXDown (ModC ())) then result.ok (ModC ())
+                    else modelerr ())
+              (lam c.
+                let modelTy = modelTy c in
+                let initTy = initTy c in
+                let endTimeTy = mulXType (dtcXDown c) (tyfloatX_ dtcPC) in
+                if subtype model.ty modelTy then
+                  if subtype init.ty initTy then
+                    if subtype endTime.ty endTimeTy then
+                      let fv =
+                        foldl1 setUnion [model.fv, init.fv, endTime.fv] in
+                      let cs = dtcEnvAccPromote (dtcEnvWeaken fv env) in
+                      result.ok
+                        { fv = fv
+                        , ty =
+                          mulXType cs
+                            (itytuple_ r.info [tyfloatc_ (ModA ()), stateTy])
+                        , e = foldl1 dtcMule [model.e, init.e, endTime.e]
+                        }
+                    else
+                      result.err
+                        (DTCArgError
+                          (infoTm r.endTime, Some (endTimeTy, endTime.ty)))
+                  else
+                    result.err
+                      (DTCArgError (infoTm r.init, Some (initTy, init.ty)))
+                else
+                  result.err
+                    (DTCArgError (infoTm r.model, Some (modelTy, model.ty))))
+          else modelerr ()
+        else modelerr ())
+end
 
 -- NOTE(oerikss, 2024-10-26): We only check that the subterms are well typed and
 -- delegate type-checking of utest terms to the core PPL type-checker.
@@ -1792,8 +1788,7 @@ lang DTCTypeOf =
   DTCTypeOfSeq + DTCTypeOfRecord + DTCTypeOfNever + DTCTypeOfMatch +
 
   DTCTypeOfInfer + DTCTypeOfAssume + DTCTypeOfObserve + DTCTypeOfWeight +
-  DTCTypeOfDist + DTCTypeOfDiff +
-  -- DTCTypeOfSolveODE +
+  DTCTypeOfDist + DTCTypeOfDiff + DTCTypeOfSolveODE +
   TypeOfUtest +
 
   -- Constants
@@ -3051,7 +3046,7 @@ iter
 
 utest
   _typeOf
-    [ (_x, arrc [(flt _A, [_A,_P])] (flt _A))
+    [ (_x, arrc [(flt _A, [_P, _A])] (flt _A))
     , (_y, flt _A)
     , (_z, flt _A)
     ]
@@ -3081,7 +3076,7 @@ utest
 
 utest
   _typeOf
-    [ (_x, arrc [(flt _A, [_A,_P])] (flt _C))
+    [ (_x, arrc [(flt _A, [_P, _A])] (flt _C))
     , (_y, flt _A)
     , (_z, flt _A)
     ]
@@ -3111,7 +3106,7 @@ utest
 
 utest
   _typeOf
-    [ (_x, arrc [(tytuple_ [flt _A, flt _A], [_A,_P])] (tytuple_ [flt _A]))
+    [ (_x, arrc [(tytuple_ [flt _A, flt _A], [_P, _A])] (tytuple_ [flt _A]))
     , (_y, tytuple_ [flt _A, flt _A])
     , (_z, tytuple_ [flt _A, flt _A])
     ]
@@ -3121,7 +3116,7 @@ utest
 
 utest
   _typeOf
-    [ (_x, arrc [(tyseq_ (flt _A), [_A, _P])] (tyseq_ (flt _A)))
+    [ (_x, arrc [(tyseq_ (flt _A), [_P, _A])] (tyseq_ (flt _A)))
     , (_y, tyseq_ (flt _A))
     , (_z, tyseq_ (flt _A))
     ]
@@ -3129,49 +3124,39 @@ utest
   with Right (_D, tyseq_ (flt _A))
   using eq else onFail in
 
-utest
+let _test = lam ty1. lam ty2.
   _typeOf
-    [ (_x, arrc [(tytuple_ [flt _A], [_A,_P])] (tytuple_ [flt _A]))
-    , (_y, tytuple_ [flt _A, flt _A])
-    , (_z, tytuple_ [flt _A])
+    [ (_x, arrc [(tytuple_ [flt _A], [_P, _A])] (tytuple_ [flt _A]))
+    , (_y, ty1)
+    , (_z, ty2)
     ]
-    (diff_ x y z)
+    (diff_ x y z) in
+
+utest
+  _test (tytuple_ [flt _A, flt _A]) (tytuple_ [flt _A])
+  with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail in
+utest
+  _test (tytuple_ [flt _A]) (tytuple_ [flt _A, flt _A])
   with Left [DTCArgError (NoInfo (), None ())]
   using eq else onFail in
 
-utest
+let _test = lam ty1. lam ty2.
   _typeOf
-    [ (_x, arrc [(tytuple_ [flt _A], [_A,_P])] (tytuple_ [flt _A]))
-    , (_y, tytuple_ [flt _A])
-    , (_z, tytuple_ [flt _A, flt _A])
+    [ (_x, arrc [(ty1, [_P, _A])] ty2)
+    , (_y, ty1)
+    , (_z, ty1)
     ]
-    (diff_ x y z)
-  with Left [DTCArgError (NoInfo (), None ())]
+    (diff_ x y z) in
+
+utest _test tyint_ (flt _A) with Left [DTCDiffFnError (NoInfo (), None ())]
+  using eq else onFail in
+utest _test (flt _A) tyint_ with Left [DTCDiffFnError (NoInfo (), None ())]
   using eq else onFail in
 
 utest
   _typeOf
-    [ (_x, arrc [(tyint_, [_A,_P])] (flt _A))
-    , (_y, flt _A)
-    , (_z, flt _A)
-    ]
-    (diff_ x y z)
-  with Left [DTCDiffFnNotRnError (NoInfo (), None ())]
-  using eq else onFail in
-
-utest
-  _typeOf
-    [ (_x, arrc [(flt _A, [_A,_P])] tyint_)
-    , (_y, flt _A)
-    , (_z, flt _A)
-    ]
-    (diff_ x y z)
-  with Left [DTCDiffFnNotRnError (NoInfo (), None ())]
-  using eq else onFail in
-
-utest
-  _typeOf
-    [ (_x, arrc [(flt _C, [_A,_P])] (flt _A))
+    [ (_x, arrc [(flt _C, [_P, _A])] (flt _A))
     , (_y, flt _C)
     , (_z, flt _C)
     ]
@@ -3201,12 +3186,156 @@ utest
 
 utest
   _typeOf
-    [ (_x, arrce [(flt _A, [_A,_P], _R)] (flt _A))
+    [ (_x, arrce [(flt _A, [_P, _A], _R)] (flt _A))
     , (_y, flt _A)
     , (_z, flt _A)
     ]
     (diff_ x y z)
   with Left [DTCDiffFnError (NoInfo (), None ())]
+  using eq else onFail in
+
+-- ┌────────────┐
+-- │ Test Solve │
+-- └────────────┘
+
+let solveode_ = lam m. lam i. lam t. TmSolveODE
+  { method = ODESolverDefault
+    { stepSize = never_
+    , add = never_
+    , smul = never_
+    }
+  , model = m
+  , init = i
+  , endTime = t
+  , ty = tyunknown_
+  , info = NoInfo ()
+  } in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _A, [_C, _A]), (flt _A, [_C, _A])] (flt _A))
+    , (_y, tytuple_ [flt _A, flt _A])
+    , (_z, fltX dtcPC)
+    ]
+    (solveode_ x y z)
+  with Right (_D, tytuple_ [flt _A, flt _A])
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _C, [_C, _A]), (flt _A, [_C, _A])] (flt _A))
+    , (_y, tytuple_ [flt _C, flt _A])
+    , (_z, flt _C)
+    ]
+    (solveode_ x y z)
+  with Right (_D, tytuple_ [flt _A, flt _A])
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x,
+       arrc [(flt _A, [_C, _A]), (tytuple_ [flt _A], [_C, _A])]
+         (tytuple_ [flt _A]))
+    , (_y, tytuple_ [flt _A, tytuple_ [flt _A]])
+    , (_z, fltX dtcPC)
+    ]
+    (solveode_ x y z)
+  with Right (_D, tytuple_ [flt _A, tytuple_ [flt _A]])
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _A, []), (flt _A, [_C, _A])] (flt _A))
+    , (_y, tytuple_ [flt _C, flt _P])
+    , (_z, fltX [])
+    ]
+    (solveode_ x y z)
+  with Right (_D, tytuple_ [fltX dtcPC, fltX dtcPC])
+  using eq else onFail in
+
+let _test = lam cs1. lam cs2.
+  _typeOf
+    [ (_x, arrc [(flt _A, cs1), (flt _A, cs2)] (flt _A))
+    , (_y, tytuple_ [flt _A, flt _A])
+    , (_z, fltX dtcPC)
+    ]
+    (solveode_ x y z) in
+
+utest _test [_C, _A, _P] [_C, _A] with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail in
+utest _test [_C, _A] [_C, _A, _P] with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _A, [_C, _A]), (flt _A, [_C, _A])] (flt _A))
+    , (_y, tytuple_ [flt _A, flt _A])
+    , (_z, flt _A)
+    ]
+    (solveode_ x y z)
+  with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _C, [_C, _A]), (flt _A, [_C, _A])] (flt _A))
+    , (_y, tytuple_ [flt _C, flt _A])
+    , (_z, fltX dtcPC)
+    ]
+    (solveode_ x y z)
+  with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail in
+
+let _test = lam e1. lam e2.
+    _typeOf
+      [ (_x, arrce [(flt _A, [_C, _A], e1), (flt _A, [_C, _A], e2)] (flt _A))
+      , (_y, tytuple_ [flt _A, flt _A])
+      , (_z, fltX dtcPC)
+      ]
+      (solveode_ x y z) in
+
+utest _test _R _D with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail in
+utest _test _D _R with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail in
+
+let _test = lam ty1. lam ty2. lam ty3.
+  _typeOf
+    [ (_x, arrc [(ty1, [_C, _A]), (ty2, [_C, _A])] ty3)
+    , (_y, tytuple_ [flt _C, flt _A])
+    , (_z, fltX dtcPC)
+    ]
+    (solveode_ x y z) in
+
+utest _test (flt _A) (flt _A) (tytuple_ [flt _A])
+  with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail in
+utest _test tyint_ (flt _A) (flt _A)
+  with Left [DTCSolveODEModelError (NoInfo (), None ())]
+  using eq else onFail in
+utest _test (flt _A) tyint_ (flt _A)
+  with Left [DTCSolveODEModelError (NoInfo (), None ())]
+  using eq else onFail in
+utest _test (flt _A) (flt _A) tyint_
+  with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail in
+
+let _test = lam ty1. lam ty2. lam ty3.
+  _typeOf
+    [ (_x, arrc [(flt _A, [_C, _A]), (flt _A, [_C, _A])] (flt _A))
+    , (_y, tytuple_ [ty1, ty2])
+    , (_z, ty3)
+    ]
+    (solveode_ x y z) in
+
+utest _test (tytuple_ [flt _A]) (flt _A) (flt _A)
+  with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail in
+utest _test (flt _A) (tytuple_ [flt _A]) (flt _A)
+  with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail in
+utest _test (flt _A) (flt _A) (tytuple_ [flt _A])
+  with Left [DTCArgError (NoInfo (), None ())]
   using eq else onFail in
 
 -- ┌───────────────────────────┐
