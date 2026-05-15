@@ -806,6 +806,7 @@ lang DTCTypeError = Ast + ConstAst + DTCEnv + DTCFloatTypeAst + PrettyPrint
   | DTCAnotError Info
   --   | DTCSolveODEModelError (Info, Option Type)
   | DTCDiffFnError (Info, Option (DTCReg, Type))
+  | DTCDiffFnNotRnError (Info, Option Type)
   | DTCPolyDistError Info
   | DTCPolyConstError Info
   | DTCUnuspportedTermError (Info, Option Expr)
@@ -825,6 +826,7 @@ lang DTCTypeError = Ast + ConstAst + DTCEnv + DTCFloatTypeAst + PrettyPrint
   | DTCAnotError i
   --   | DTCSolveODEModelError (i, _)
   | DTCDiffFnError (i, _)
+  | DTCDiffFnNotRnError (i, _)
   | DTCPolyDistError i
   | DTCPolyConstError i
   | DTCUnuspportedTermError (i, _)
@@ -844,6 +846,7 @@ lang DTCTypeError = Ast + ConstAst + DTCEnv + DTCFloatTypeAst + PrettyPrint
   | DTCAnotError _ -> "AnotError"
   --   | DTCSolveODEModelError _ -> "SolveODEModelError"
   | DTCDiffFnError _ -> "DiffFnError"
+  | DTCDiffFnNotRnError _ -> "DiffFnNotRnError"
   | DTCPolyDistError _ -> "PolyDistError"
   | DTCPolyConstError _ -> "PolyConstError"
   | DTCUnuspportedTermError _ -> "UnuspportedTermError"
@@ -891,6 +894,10 @@ lang DTCTypeError = Ast + ConstAst + DTCEnv + DTCFloatTypeAst + PrettyPrint
        [ "Determinstic function isomorfic to:"
        , "FloatAⁿ ->{M,P,A} FloatAᵐ or FloatPⁿ ->{P} FloatPᵐ"
        ]
+       [type2str ty])
+  | DTCDiffFnError (info, Some ty) ->
+    (info,
+     _typeErrorToMsg2 [ "Function isomorfic to Floatⁿ -> Floatᵐ"]
        [type2str ty])
   | DTCPolyDistError info ->
     (info, "* Polymorfic distributions are currently not supported")
@@ -1393,7 +1400,6 @@ lang DTCTypeOfDiff = Diff + IsIsomorficToRn + DTCTypeOfBase
         match fn.ty with TyArrowCE arr then
           if and (isIsomorficToRn arr.from) (isIsomorficToRn arr.to) then
             let withA = withX (dtcXDown (ModA ())) in
-            let retTy = withA arr.to in
             let fv = foldl1 setUnion [fn.fv, arg.fv, darg.fv] in
             let cs =
               foldl accApp
@@ -1405,26 +1411,30 @@ lang DTCTypeOfDiff = Diff + IsIsomorficToRn + DTCTypeOfBase
                 , ty = mulXType cs (withA arr.to)
                 , e = foldl1 dtcMule [fn.e, arg.e, darg.e]
                 } in
-            if subtype darg.ty (withA arr.from) then
-              let withP = withX (dtcXDown (ModP ())) in
-              if subtype fn.ty
-                   (tyarrowXe_
-                      (withA arr.from) (withA arr.from)
-                      [ModP (), ModA ()]
-                      (ModD ()))
-              then ok ()
-              else
+            if subtype arg.ty (withA arr.from) then
+              if subtype darg.ty (withA arr.from) then
                 if subtype fn.ty
                      (tyarrowXe_
-                        (withP arr.from) (withP arr.from)
-                        [ModP ()]
+                        (withA arr.from) (withA arr.to)
+                        [ModP (), ModA ()]
                         (ModD ()))
                 then ok ()
-                else err ()
+                else
+                  let withP = withX (dtcXDown (ModP ())) in
+                  if subtype fn.ty
+                       (tyarrowXe_
+                          (withP arr.from) (withP arr.to)
+                          [ModP ()]
+                          (ModD ()))
+                  then ok ()
+                  else err ()
+              else
+                result.err
+                  (DTCArgError (infoTm r.darg, Some (withA arr.from, darg.ty)))
             else
               result.err
-                (DTCArgError (infoTm r.darg, Some (withA arr.from, darg.ty)))
-          else err ()
+                (DTCArgError (infoTm r.arg, Some (withA arr.from, arg.ty)))
+          else result.err (DTCDiffFnNotRnError (infoTm r.fn, Some (fn.ty)))
         else err ())
 end
 
@@ -3034,6 +3044,170 @@ iter
 
     ())
   [CNegf (), CSin (), CCos (), CExp (), CLog (), CSqrt (), CAbsf ()];
+
+-- ┌───────────┐
+-- │ Test Diff │
+-- └───────────┘
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _A, [_A,_P])] (flt _A))
+    , (_y, flt _A)
+    , (_z, flt _A)
+    ]
+    (diff_ x y z)
+  with Right (_D, flt _A)
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _A, [_P])] (flt _A))
+    , (_y, flt _P)
+    , (_z, flt _P)
+    ]
+    (diff_ x y z)
+  with Right (_D, flt _P)
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _A, [])] (flt _A))
+    , (_y, fltX [])
+    , (_z, fltX [])
+    ]
+    (diff_ x y z)
+  with Right (_D, fltX [])
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _A, [_A,_P])] (flt _C))
+    , (_y, flt _A)
+    , (_z, flt _A)
+    ]
+    (diff_ x y z)
+  with Right (_D, flt _A)
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _P, [_P])] (flt _P))
+    , (_y, flt _P)
+    , (_z, flt _P)
+    ]
+    (diff_ x y z)
+  with Right (_D, flt _P)
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _P, [])] (fltX []))
+    , (_y, fltX [])
+    , (_z, fltX [])
+    ]
+    (diff_ x y z)
+  with Right (_D, fltX [])
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(tytuple_ [flt _A, flt _A], [_A,_P])] (tytuple_ [flt _A]))
+    , (_y, tytuple_ [flt _A, flt _A])
+    , (_z, tytuple_ [flt _A, flt _A])
+    ]
+    (diff_ x y z)
+  with Right (_D, tytuple_ [flt _A])
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(tyseq_ (flt _A), [_A, _P])] (tyseq_ (flt _A)))
+    , (_y, tyseq_ (flt _A))
+    , (_z, tyseq_ (flt _A))
+    ]
+    (diff_ x y z)
+  with Right (_D, tyseq_ (flt _A))
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(tytuple_ [flt _A], [_A,_P])] (tytuple_ [flt _A]))
+    , (_y, tytuple_ [flt _A, flt _A])
+    , (_z, tytuple_ [flt _A])
+    ]
+    (diff_ x y z)
+  with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(tytuple_ [flt _A], [_A,_P])] (tytuple_ [flt _A]))
+    , (_y, tytuple_ [flt _A])
+    , (_z, tytuple_ [flt _A, flt _A])
+    ]
+    (diff_ x y z)
+  with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(tyint_, [_A,_P])] (flt _A))
+    , (_y, flt _A)
+    , (_z, flt _A)
+    ]
+    (diff_ x y z)
+  with Left [DTCDiffFnNotRnError (NoInfo (), None ())]
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _A, [_A,_P])] tyint_)
+    , (_y, flt _A)
+    , (_z, flt _A)
+    ]
+    (diff_ x y z)
+  with Left [DTCDiffFnNotRnError (NoInfo (), None ())]
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _C, [_A,_P])] (flt _A))
+    , (_y, flt _C)
+    , (_z, flt _C)
+    ]
+    (diff_ x y z)
+  with Left [DTCDiffFnError (NoInfo (), None ())]
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _P, [_C])] (flt _P))
+    , (_y, flt _P)
+    , (_z, flt _P)
+    ]
+    (diff_ x y z)
+  with Left [DTCDiffFnError (NoInfo (), None ())]
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _P, [_A])] (flt _P))
+    , (_y, flt _P)
+    , (_z, flt _P)
+    ]
+    (diff_ x y z)
+  with Left [DTCDiffFnError (NoInfo (), None ())]
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrce [(flt _A, [_A,_P], _R)] (flt _A))
+    , (_y, flt _A)
+    , (_z, flt _A)
+    ]
+    (diff_ x y z)
+  with Left [DTCDiffFnError (NoInfo (), None ())]
+  using eq else onFail in
 
 -- ┌───────────────────────────┐
 -- │ Test eraseDecorationsType │
