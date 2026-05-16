@@ -6,6 +6,7 @@ EXAMPLES := \
 	bayesian-parameter-estimation-ivp-solution-trace-run.json \
 	bayesian-parameter-estimation-ivp-sensitivity-trace-run.json \
 	ode-sensitivites-two-methods-run.json \
+	ode-sensitivites-two-methods-scalar-run.json \
 	rode-run.json \
 	tumor-inhibitor-rode-run.json
 

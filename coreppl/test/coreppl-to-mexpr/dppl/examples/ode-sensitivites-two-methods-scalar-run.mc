@@ -1,9 +1,9 @@
-include "ode-sensitivites-two-methods.mc"
+include "ode-sensitivites-two-methods-scalar.mc"
 
 mexpr
 
-match distEmpiricalSamples #var"Dist_dy/dθ" with (samples, weights) in
-writeFile "ode-sensitivites-two-methods-run.json"
+match distEmpiricalSamples #var"Dist_sθ" with (samples, weights) in
+writeFile "ode-sensitivites-two-methods-scalar-run.json"
   (jsonObject [
     ("xs", seqToJson (map floatToJson times)),
     ("samples",

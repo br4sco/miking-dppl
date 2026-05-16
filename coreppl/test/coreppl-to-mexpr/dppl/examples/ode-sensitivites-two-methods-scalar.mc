@@ -1,23 +1,32 @@
 include "../lib.mc"
 
 let solve =
-  lam f : FloatA -> FloatA -> FloatA.
+  lam f : FloatA -> ModC (ModA (FloatA -> ModC (ModA (FloatA)))).
     lam xy0 : (FloatA, FloatA).
-      lam x : FloatP.
-        solveode (RK4EC {
-          add = addf, smul = mulf, stepSize = 1e-2,
-          ok = lam yh : FloatP. lam y2h2 : FloatP.
-            let err = subf yh y2h2 in ltf (mulf err err) 1e-2 })
+      lam x : FloatPC.
+        solveode
+          (RK4EC
+            { add = lam x : FloatA. lam y : FloatA. addf x y
+            , smul = lam x : FloatA. lam y : FloatA. mulf x y
+            , stepSize = 1e-2
+            , ok =
+              lam yh : FloatP. lam y2h2 : FloatP.
+                let err = subf yh y2h2 in ltf (mulf err err) 1e-2
+            })
           f xy0 x
 
 let solve2 =
-  lam f : FloatA -> (FloatA, FloatA) -> (FloatA, FloatA).
+  lam f : FloatA -> ModC (ModA ((FloatA, FloatA) -> ModC (ModA (FloatA, FloatA)))).
     lam xy0 : (FloatA, (FloatA, FloatA)).
-      lam x : FloatP.
-        solveode (RK4EC {
-          add = addp, smul = smulp, stepSize = 1e-2,
-          ok = lam yh : (FloatP, FloatP). lam y2h2 : (FloatP, FloatP).
-            ltf (l2normp (subp yh y2h2)) 1e-2 })
+      lam x : FloatPC.
+        solveode
+          (RK4EC
+            { add = addp
+            , smul = smulp
+            , stepSize = 1e-2
+            , ok =
+              lam yh : (FloatP, FloatP). lam y2h2 : (FloatP, FloatP).
+                ltf (l2normp (subp yh y2h2)) 1e-2 })
           f xy0 x
 
 let _n = 200
@@ -48,9 +57,8 @@ let s2 = lam #var"θ" : FloatA. lam x1 : FloatP.
 
 let _model = lam t : ().
   let #var"θ" = assume (Uniform 0.1 0.5) in
-  [
-    map (lam x : FloatP. match s1 #var"θ" x with (_, s) in (x, [s])) times,
-    map (lam x : FloatP. match s2 #var"θ" x with (_, s) in (x, [s])) times
+  [ map (lam x : FloatP. match s1 #var"θ" x with (_, s) in (x, [s])) times
+  , map (lam x : FloatP. match s2 #var"θ" x with (_, s) in (x, [s])) times
   ]
 
 let #var"Dist_sθ" = infer (Importance { particles = 10 }) _model
@@ -59,10 +67,15 @@ mexpr
 
 match distEmpiricalSamples #var"Dist_sθ" with (samples, weights) in
 let samples =
-  map (map (mapi (lam i : Int. lam t : (FloatM, [FloatM]). (get times i, t.1))))
+  map
+    (lam x : [[(Float, [Float])]].
+      map
+        (lam ts : [(Float, [Float])].
+          mapi (lam i : Int. lam t : (Float, [Float]). (get times i, t.1)) ts)
+        x)
     samples in
 printWeightedTraces samples weights
 
 -- local variables:
--- compile-command: "cppl --seed 1 --cps partial --dppl-typecheck ode-sensitivites-two-methods-sclar.mc && ./out | dppl-plot-process --lines && rm ./out"
+-- compile-command: "cppl --seed 1 --cps partial --dppl-typecheck ode-sensitivites-two-methods-scalar.mc && ./out | dppl-plot-process --lines && rm ./out"
 -- End:

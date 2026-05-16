@@ -8,14 +8,14 @@ let times = create _n (lam i : Int. mulf _h (int2float (addi i 1)))
 let f = ode
 
 let fS =
-  lam f : FloatA -> FloatA -> [FloatA] -> [FloatA].
+  lam f : FloatA -> FloatA -> ModA ([FloatA] -> ModA [FloatA]).
     lam #var"θ" : FloatA. lam x : FloatA. lam y : [FloatA].
-  match splitAt y (divi (length y) 2) with (y, #var"dy/dθ") in
-  let #var"df/dy⋅dy/dθ" = diff (f #var"θ" x) y #var"dy/dθ" in
-  let #var"df/dθ" = diff (lam #var"θ" : FloatA. f #var"θ" x y) #var"θ" 1. in
-  concat (f #var"θ" x y) (adds #var"df/dy⋅dy/dθ" #var"df/dθ")
+      match splitAt y (divi (length y) 2) with (y, #var"dy/dθ") in
+      let #var"df/dy⋅dy/dθ" = diff (f #var"θ" x) y #var"dy/dθ" in
+      let #var"df/dθ" = diff (lam #var"θ" : FloatA. f #var"θ" x y) #var"θ" 1. in
+      concat (f #var"θ" x y) (adds #var"df/dy⋅dy/dθ" #var"df/dθ")
 
-let yS = lam #var"θ" : FloatA. lam xy0 : (FloatA, [FloatA]). lam x1 : FloatP.
+let yS = lam #var"θ" : FloatA. lam xy0 : (FloatA, [FloatA]). lam x1 : FloatPC.
   solve (fS f #var"θ") xy0 x1
 
 let _model = lam t : ().
@@ -33,7 +33,14 @@ mexpr
 
 match distEmpiricalSamples #var"Dist_dy/dθ" with (samples, weights) in
 let samples =
-  map (map (mapi (lam i : Int. lam t : (FloatM, [FloatM]). (get times i, t.1))))
+  map
+    (lam x : [[(Float, [Float])]].
+      map
+        (lam ts : [(Float, [Float])].
+          mapi
+            (lam i : Int. lam t : (Float, [Float]). (get times i, t.1))
+            ts)
+        x)
     samples in
 printWeightedTraces samples weights
 

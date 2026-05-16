@@ -9,7 +9,7 @@ writeFile "tumor-inhibitor-rode-run.json"
       (create (length samples)
          (lam i : Int.
            seqToJson
-             (map (lam s : (FloatM, (FloatM, FloatM, FloatM)).
+             (map (lam s : (Float, (Float, Float, Float)).
                match s.1 with (x0, x1, x2) in floatSeqToJson [x0, x1, x2])
                 (get (get samples i) j))))
    in

@@ -356,6 +356,7 @@ let cpplBuiltin = use MExprPPL in concat
   , ("log", CLog ())
   , ("pow", CPow ())
   , ("absf", CAbsf ())
+  , ("recipabsf", CRecipabsf ())
   ] builtin
 
 let defaultBootParserParseCorePPLFileArg =

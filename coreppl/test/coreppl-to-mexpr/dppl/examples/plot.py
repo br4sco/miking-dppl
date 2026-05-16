@@ -163,7 +163,7 @@ def plot_trace_dist(file_name, prey_label, pred_label, yminofs, ymaxofs):
             )
             fig.tight_layout()
     except FileNotFoundError:
-        print(f"{file} not found")
+        print(f"{file_name} not found")
 
 
 plot_trace_dist(
@@ -247,33 +247,42 @@ except FileNotFoundError:
     print(f"All files not found")
 
 
-try:
-    file = "ode-sensitivites-two-methods-run.json"
-    with open(file, "r") as file:
-        data = json.load(file)
-        xs = np.asarray(data["xs"])
-        samples = np.asarray(data["samples"])
-        plt.rcParams.update({"font.size": 24})
-        fig, ax = plt.subplots(1, 2, figsize=(20, 4), constrained_layout=True)
+def plot_sens_dist(file_name):
+    try:
+        with open(file_name, "r") as file:
+            data = json.load(file)
+            xs = np.asarray(data["xs"])
+            samples = np.asarray(data["samples"])
+            plt.rcParams.update({"font.size": 24})
+            fig, ax = plt.subplots(
+                1, 2, figsize=(20, 4), constrained_layout=True
+            )
 
-        def plot(j):
-            for i in range(len(samples)):
-                ys = samples[i][j].transpose()
-                ax[j].plot(
-                    xs, ys[0], alpha=5 * min(1, 1 / len(samples)), color=BLUE
-                )
-                ax[j].plot(
-                    xs, ys[1], alpha=5 * min(1, 1 / len(samples)), color=RED
-                )
-                set_grid(ax[j])
-                ax[j].set_xlabel(r"$x$")
+            colors = [CB_BLUE, CB_ORANGE, CB_BLACK]
 
-        plot(0)
-        plot(1)
-        ax[0].set_ylabel(r"$s_{\theta}(x)$")
-        # fig.tight_layout()
-except FileNotFoundError:
-    print(f"{file} not found")
+            def plot(j):
+                for i in range(len(samples)):
+                    ys = samples[i][j].transpose()
+                    for k in range(len(ys)):
+                        ax[j].plot(
+                            xs,
+                            ys[k],
+                            alpha=5 * min(1, 1 / len(samples)),
+                            color=colors[k % len(colors)],
+                        )
+                        set_grid(ax[j])
+                        ax[j].set_xlabel(r"$x$")
+
+            plot(0)
+            plot(1)
+            ax[0].set_ylabel(r"$s_{\theta}(x)$")
+            # fig.tight_layout()
+    except FileNotFoundError:
+        print(f"{file_name} not found")
+
+
+plot_sens_dist("ode-sensitivites-two-methods-scalar-run.json")
+plot_sens_dist("ode-sensitivites-two-methods-run.json")
 
 try:
     file = "rode-run.json"
@@ -316,7 +325,7 @@ try:
         plt.rcParams.update({"font.size": 24})
         fig, ax = plt.subplots(1, 2, figsize=(12, 8), constrained_layout=True)
 
-        linestyle = ["-", "-.", "--", ":", (0, (5, 5))]
+        linestyle = ["-", "-.", "--", ":", (0, (5, 5))][::-1]
 
         def plot(ax, ys, i, j, label, color):
             ax.plot(
@@ -391,7 +400,7 @@ try:
         plt.rcParams.update({"font.size": 24})
         fig, ax = plt.subplots(3, 2, figsize=(10, 8), constrained_layout=True)
 
-        linestyle = ["-", "-.", "--", ":", (0, (5, 5))]
+        linestyle = ["-", "-.", "--", ":", (0, (5, 5))][::-1]
         markers = ["o", "s", "^", "*", "D"]
 
         def plot(ax, ys, i, j, label, color):
@@ -451,7 +460,6 @@ try:
         ax[2][1].set_yticks([0, 4000])
         ax[2][1].set_xticks(xticks)
 
-
         ax[0][0].set_ylabel(r"$C(t)$")
         ax[1][0].set_ylabel(r"$P(t)$")
         ax[2][0].set_ylabel(r"$I(t)$")
@@ -483,5 +491,5 @@ try:
 except FileNotFoundError:
     print(f"{file} not found")
 
-plt.style.use('tableau-colorblind10')
+plt.style.use("tableau-colorblind10")
 plt.show()

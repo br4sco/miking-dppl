@@ -1030,7 +1030,7 @@ lang DTCTypeOfApp = AppAst + DTCFunTypeAst + FreeVars + DTCTypeOfBase
           if subtype rhs.ty arr.from then
             let fv = setUnion lhs.fv rhs.fv in
             let cs = accApp (dtcEnvAccPromote (dtcEnvWeaken fv env)) arr.to in
-            resultOK [lhs.e, rhs.e] (mulXType cs arr.to) [fv]
+            resultOK [arr.e, lhs.e, rhs.e] (mulXType cs arr.to) [fv]
           else argErr r.rhs arr.from rhs.ty)
       else result.err (DTCArrowError (infoTm r.lhs, Some (lhs.ty))))
 end
@@ -1083,7 +1083,8 @@ lang DTCTypeOfConst =
           result.bind (dtcConstType info (const, [tm.ty])) (lam constTy.
             match constTy with TyArrowCE r then
               if subtype tm.ty r.from then
-                let cs = dtcEnvAccPromote (dtcEnvWeaken tm.fv env) in
+                let cs =
+                  accApp (dtcEnvAccPromote (dtcEnvWeaken tm.fv env)) r.to in
                 result.ok
                   { e = dtcMule (effecIfApplied tm.ty) tm.e
                   , ty = mulXType cs r.to
@@ -1103,7 +1104,8 @@ lang DTCTypeOfConst =
               if subtype tm1.ty r1.from then
                 if subtype tm2.ty r2.from then
                   let fv = setUnion tm1.fv tm2.fv in
-                  let cs = dtcEnvAccPromote (dtcEnvWeaken fv env)in
+                  let cs =
+                    accApp (dtcEnvAccPromote (dtcEnvWeaken fv env)) r2.to in
                   result.ok
                     { e = foldl1 dtcMule
                             (concat (map effecIfApplied [tm1.ty, tm2.ty])
@@ -1131,7 +1133,8 @@ lang DTCTypeOfConst =
                   if subtype tm2.ty r2.from then
                     if subtype tm3.ty r3.from then
                       let fv = setUnion (setUnion tm1.fv tm2.fv) tm3.fv in
-                      let cs = dtcEnvAccPromote (dtcEnvWeaken fv env) in
+                      let cs =
+                        accApp (dtcEnvAccPromote (dtcEnvWeaken fv env)) r3.to in
                       result.ok
                         { e = foldl1 dtcMule
                                 (concat
@@ -1306,10 +1309,10 @@ lang DTCTypeOfAssume = Assume + DTCTypeOfBase
   sem typeOfH env =
   | TmAssume r ->
     result.bind (typeOfH env r.dist) (lam dist.
-      match dist with {ty = TyDist _} then
+      match dist with {ty = TyDist distr} then
         let cs =
-          accApp (dtcEnvAccPromote (dtcEnvWeaken dist.fv env)) dist.ty in
-        result.ok { dist with e = ModR (), ty = mulXType cs dist.ty }
+          accApp (dtcEnvAccPromote (dtcEnvWeaken dist.fv env)) distr.ty in
+        result.ok { dist with e = ModR (), ty = mulXType cs distr.ty }
       else
         result.err
           (DTCArgError
@@ -1473,7 +1476,7 @@ lang DTCTypeOfSolveODE = SolveODE + IsIsomorficToRn + DTCTypeOfBase
                         { fv = fv
                         , ty =
                           mulXType cs
-                            (itytuple_ r.info [tyfloatc_ (ModA ()), stateTy])
+                            (itytuple_ r.info [tyfloatc_ c, stateTy])
                         , e = foldl1 dtcMule [model.e, init.e, endTime.e]
                         }
                     else
@@ -1545,10 +1548,10 @@ end
 
 lang DTCElementaryFunctionsType = ElementaryFunctions + DTCTyConst
   sem dtcConstType info =
-  | (CSin _ | CCos _ | CExp _, _) ->
+  | (CSin _ | CCos _ | CExp _ | CRecipabsf _, _) ->
     let tyfloat = ityfloatc_ info (ModA ()) in
     result.ok (iarr_ info tyfloat tyfloat)
-  | (CLog _ | CSqrt _  | CAbsf _, _) ->
+  | (CLog _ | CSqrt _, _) ->
     let tyfloat = ityfloatc_ info (ModP ()) in
     result.ok (iarr_ info tyfloat tyfloat)
   | (CAbsf _, _) ->
@@ -1657,26 +1660,32 @@ lang DTCSeqOpType = SeqOpAst + DTCTypeOfConst
          , TySeq { seqr with ty = arrr2.from }
          , tyunit_
          ])
-  | ( CFoldl _
-    , [TyArrowCE (arrr1 & {to = TyArrowCE arrr2}), _, TySeq seqr] ) ->
-    let arr = foldr1 (iarr_ info) in
-    result.ok
-      (arr
-         [ TyArrowCE { arrr1 with to = TyArrowCE { arrr2 with to = arrr1.from }}
-         , arrr1.from
-         , TySeq { seqr with ty = arrr2.from }
-         , arrr1.from
-         ])
-  | ( CFoldr _
-    , [TyArrowCE (arrr1 & {to = TyArrowCE arrr2}), _, TySeq seqr] ) ->
-    let arr = foldr1 (iarr_ info) in
-    result.ok
-      (arr
-         [ TyArrowCE { arrr1 with to = TyArrowCE { arrr2 with to = arrr2.from }}
-         , arrr2.from
-         , TySeq { seqr with ty = arrr1.from }
-         , arrr2.from
-         ])
+  -- | ( CFoldl _
+  --   , [tyarr & TyArrowCE (arrr1 & {to = TyArrowCE arrr2}), _, TySeq seqr] ) ->
+  --   if subtype arrr2.to arrr1.from then
+  --     let arr = foldr1 (iarr_ info) in
+  --     result.ok
+  --       (arr
+  --          [ tyarr
+  --          , arrr1.from
+  --          , TySeq { seqr with ty = arrr2.from }
+  --          , arrr2.to
+  --          ])
+  --   else
+  --     result.err (DTCArgError (info, None ()))
+  -- | ( CFoldr _
+  --   , [tyarr & TyArrowCE (arrr1 & {to = TyArrowCE arrr2}), _, TySeq seqr] ) ->
+  --   if subtype arrr2.to arrr2.from then
+  --     let arr = foldr1 (iarr_ info) in
+  --     result.ok
+  --       (arr
+  --          [ tyarr
+  --          , arrr2.from
+  --          , TySeq { seqr with ty = arrr1.from }
+  --          , arrr2.to
+  --          ])
+  --   else
+  --     result.err (DTCArgError (info, None ()))
   | (CCreate _ | CCreateList _ | CCreateRope _, [_, TyArrowCE arrr]) ->
     let arr = foldr1 (iarr_ info) in
     result.ok
@@ -1691,6 +1700,18 @@ lang DTCSeqOpType = SeqOpAst + DTCTypeOfConst
   | (CSubsequence _, [tyseq & TySeq seqr, _, _]) ->
     let arr = foldr1 (iarr_ info) in
     result.ok (arr [tyseq, ityint_ info, ityint_ info, tyseq])
+
+  sem typeOfConstApp3 env info =
+  | (CFoldl _, tm1, tm2, tm3) ->
+    let wi = withInfo info in
+    let appf2 = lam f. lam x. lam y. wi (app_ (wi (app_ f x)) y) in
+    let get = lam s. lam i. wi (get_ s (wi (int_ i))) in
+    typeOfH env (appf2 tm1 (appf2 tm1 tm2 (get tm3 0)) (get tm3 1))
+  | (CFoldr _, tm1, tm2, tm3) ->
+    let wi = withInfo info in
+    let appf2 = lam f. lam x. lam y. wi (app_ (wi (app_ f x)) y) in
+    let get = lam s. lam i. wi (get_ s (wi (int_ i))) in
+    typeOfH env (appf2 tm1 (get tm3 1) (appf2 tm1 (get tm3 0) tm2))
 end
 
 lang DTCDistOpType = Dist + DTCTypeOfConst
@@ -2679,24 +2700,25 @@ utest _test _D _D with _expected _D using eq else onFail in
 utest _test _R _D with _expected _R using eq else onFail in
 utest _test _D _R with _expected _R using eq else onFail in
 utest _test _R _R with _expected _R using eq else onFail in
-utest
+
+let _test = lam ty1. lam ty2. lam ty3.
   _typeOf
-    [ (_x, arr [tyint_, flt _A] (flt _C))
-    , (_y, fltX [])
-    , (_z, tyseq_ (flt _P))
+    [ (_x, arr [ty1, flt _A] ty2)
+    , (_y, ty3)
+    , (_z, tyseq_ (flt _A))
     ]
-    (foldl_ x y z)
+    (foldl_ x y z) in
+
+utest _test tyint_ (flt _A) tyint_
   with Left [DTCArgError (NoInfo (), None ())]
   using eq else onFail in
-utest
-  _typeOf
-    [ (_x, arr [flt _C, tyint_] (flt _C))
-    , (_y, fltX [])
-    , (_z, tyseq_ (flt _P))
-    ]
-    (foldl_ x y z)
+utest _test (flt _P) (flt _A) (fltX [])
   with Left [DTCArgError (NoInfo (), None ())]
   using eq else onFail in
+utest _test (flt _A) (flt _P) (fltX [])
+  with Right (_D, fltX [])
+  using eq else onFail in
+
 utest
   _typeOf
     [ (_x, arre [(flt _C, _D), (flt _A, _D)] (flt _C))
@@ -2721,24 +2743,25 @@ utest _test _D _D with _expected _D using eq else onFail in
 utest _test _R _D with _expected _R using eq else onFail in
 utest _test _D _R with _expected _R using eq else onFail in
 utest _test _R _R with _expected _R using eq else onFail in
-utest
+
+let _test = lam ty1. lam ty2. lam ty3.
   _typeOf
-    [ (_x, arr [flt _A, tyint_] (flt _C))
-    , (_y, fltX [])
-    , (_z, tyseq_ (flt _P))
+    [ (_x, arr [flt _A, ty1] ty2)
+    , (_y, ty3)
+    , (_z, tyseq_ (flt _A))
     ]
-    (foldr_ x y z)
+    (foldr_ x y z) in
+
+utest _test tyint_ (flt _A) tyint_
   with Left [DTCArgError (NoInfo (), None ())]
   using eq else onFail in
-utest
-  _typeOf
-    [ (_x, arr [flt _A, flt _C] tyint_)
-    , (_y, fltX [])
-    , (_z, tyseq_ (flt _P))
-    ]
-    (foldr_ x y z)
+utest _test (flt _P) (flt _A) (fltX [])
   with Left [DTCArgError (NoInfo (), None ())]
   using eq else onFail in
+utest _test (flt _A) (flt _P) (fltX [])
+  with Right (_D, fltX [])
+  using eq else onFail in
+
 utest
   _typeOf
     [ (_x, arr [tyint_, flt _C] (flt _C))
@@ -2971,7 +2994,7 @@ iter
       using eq else onFailConst c in
 
     ())
-  [CNegf (), CSin (), CCos (), CExp ()];
+  [CNegf (), CSin (), CCos (), CExp (), CRecipabsf ()];
 
 iter
   (lam c.
@@ -3032,7 +3055,15 @@ iter
       using eq else onFailConst c in
 
     ())
-  [CNegf (), CSin (), CCos (), CExp (), CLog (), CSqrt (), CAbsf ()];
+  [ CNegf ()
+  , CSin ()
+  , CCos ()
+  , CExp ()
+  , CLog ()
+  , CSqrt ()
+  , CAbsf ()
+  , CRecipabsf ()
+  ];
 
 -- ┌───────────┐
 -- │ Test Diff │

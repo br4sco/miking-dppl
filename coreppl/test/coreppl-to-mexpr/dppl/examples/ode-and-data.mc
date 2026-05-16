@@ -5,28 +5,29 @@ include "../lotka-model.mc"
 
 -- Specialize solver
 let solve =
-  lam f : FloatA -> ModC ((FloatA, [FloatA]) -> (FloatA, [FloatA])).
-    lam xy0 : (FloatA, (FloatA, [FloatA])).
-      lam x : FloatP.
-        solveode (RK4EC {
-          stepSize = 1e-2,
-          add = lam x : (FloatA, [FloatA]). lam y : (FloatA, [FloatA]).
-            (addf x.0 y.0, adds x.1 y.1),
-          smul = lam x : FloatA. lam y : (FloatA, [FloatA]).
-            (mulf x y.0, smuls x y.1),
-          ok = lam yh : (FloatP, [FloatP]). lam y2h2 : (FloatP, [FloatP]).
-            ltf (l2norms (subs yh.1 y2h2.1)) (mulf (int2float (length yh.1)) 1e-2) })
-                f xy0 x
+  lam f : FloatA -> ModC (ModA ([FloatA] -> ModC (ModA [FloatA]))).
+    lam xy0 : (FloatA, [FloatA]).
+      lam x : FloatPC.
+        solveode
+          (RK4EC
+            { stepSize = 1e-2
+            , add = adds
+            , smul = smuls
+            , ok =
+              lam yh : [FloatP]. lam y2h2 : [FloatP].
+                ltf (l2norms (subs yh y2h2)) (mulf (int2float (length yh)) 1e-2)
+            })
+          f xy0 x
 
 -- Creates a solution trace from a IVP solution
 let trace =
-  lam y : (FloatA, [FloatA]) -> FloatP -> (Float, [Float]).
+  lam y : (FloatA, [FloatA]) -> ModA (FloatPC -> ModC (ModP (ModA (FloatA, [FloatA])))).
     lam xy0 : (FloatA, [FloatA]).
-      lam xs : [FloatP].
+      lam xs : [FloatPC].
         tail
           (reverse
              (foldl
-                (lam xys : [(FloatA, [FloatA])]. lam x : FloatP.
+                (lam xys : [(FloatA, [FloatA])]. lam x : FloatPC.
                   cons (y (head xys) x) xys)
                 [xy0] xs))
 
@@ -35,19 +36,16 @@ let x0 = 0.
 let y0 = [1., 1.]
 
 -- ODE model
-let ode = lam x : FloatA. lam y : (FloatA, [FloatA]).
-  match y with (#var"θ", y) in
+let ode = lam #var"θ" : FloatA. lam x : FloatA. lam y : [FloatA].
   let t = lotkaVolterra (#var"θ", 1., 1., 3.) (get y 0, get y 1) in
-  (0., [t.0, t.1])
+  [t.0, t.1]
 
 -- IVP solution
-let y = lam #var"θ" : FloatA. lam xy0 : (FloatA, [FloatA]). lam x : FloatP.
-  match xy0 with (x0, y0) in
-  match solve ode (x0, (#var"θ", y0)) x with (x1, (_, y1)) in
-  (x1, y1)
+let y = lam #var"θ" : FloatA. lam xy0 : (FloatA, [FloatA]). lam x : FloatPC.
+  solve (ode #var"θ") xy0 x
 
 -- We can only observe the density of preys
-let g = lam t : (FloatA, [FloatA]). get (t.1) 0
+let g = lam t : (FloatA, [FloatA]). get t.1 0
 
 -- Size time-step
 let hData = 0.1
@@ -56,20 +54,17 @@ let hData = 0.1
 let #var"true_θ" = 1.5
 
 -- True solution
-let true_y = lam xy0 : (FloatA, [FloatA]). lam x : FloatP.
-  match xy0 with (x0, y0) in
-  match
-    solveode (RK4EC {
-      stepSize = 1e-3,
-      add = lam x : (FloatA, [FloatA]). lam y : (FloatA, [FloatA]).
-        (addf x.0 y.0, adds x.1 y.1),
-      smul = lam x : FloatA. lam y : (FloatA, [FloatA]).
-        (mulf x y.0, smuls x y.1),
-      ok = lam yh : (FloatP, [FloatP]). lam y2h2 : (FloatP, [FloatP]).
-        ltf (l2norms (subs yh.1 y2h2.1)) (mulf (int2float (length yh.1)) 1e-2) })
-      ode (x0, (#var"true_θ", y0)) x
-    with (x1, (_, y1)) in
-  (x1, y1)
+let true_y = lam xy0 : (FloatA, [FloatA]). lam x : FloatPC.
+  solveode
+    (RK4EC
+      { stepSize = 1e-3
+      , add = adds
+      , smul = smuls
+      , ok =
+        lam yh : [FloatP]. lam y2h2 : [FloatP].
+          ltf (l2norms (subs yh y2h2)) (mulf (int2float (length yh)) 1e-2)
+      })
+    (ode #var"true_θ")  xy0 x
 
 -- Measurement noise ν ~ N(0, 1)
 let noise = [ -0.82890921, -0.25021182, -0.63268277, -0.48174128,  1.36814387,

@@ -31,10 +31,10 @@ let subs = lam a : [FloatA]. lam b : [FloatA].
 
 -- Vector L2 norm
 let l2norms = lam a : [FloatA].
-  foldl addf 0. (map (lam x : FloatA. mulf x x) a)
+  foldl (lam acc : FloatA. lam x : FloatA. addf acc x) 0. (map (lam x : FloatA. mulf x x) a)
 
 -- Scalar multiplication
-let smuls = lam s : FloatA. map (mulf s)
+let smuls = lam s : FloatA. lam xs : [FloatA]. map (lam x : FloatA. mulf s x) xs
 
 -- Add pairs
 let addp = lam a : (FloatA, FloatA). lam b : (FloatA, FloatA).
@@ -73,43 +73,43 @@ let eqs = lam a : [FloatP]. lam b : [FloatP].
   foldl and true (map (lam t : (FloatP, FloatP). eqfApprox 0.05 t.0 t.1) (zip a b))
 
 -- pretty prints a float to standard out.
-let ppFloat = lam x : FloatM. print (float2string x)
+let ppFloat = lam x : Float. print (float2string x)
 
 -- pretty prints a sequence of floats to standard out.
-let ppFloatSeq = lam xs : [FloatM].
+let ppFloatSeq = lam xs : [Float].
   let n = length xs in
   print "[";
   iteri
-    (lam i : Int. lam x : FloatM.
+    (lam i : Int. lam x : Float.
       ppFloat x; (if lti i (subi n 1) then print "," else print "]"))
     xs
 
 -- prints an ode trace, consisting of time-value pairs, to standard out.
-let ppODETrace = lam tr : [(FloatM, [FloatM])].
+let ppODETrace = lam tr : [(Float, [Float])].
   let ppf = ppFloat in
   let n = length tr in
   print "[";
   iteri
-    (lam i : Int. lam p : (FloatM, [FloatM]).
+    (lam i : Int. lam p : (Float, [Float]).
       match p with (t, xs) in
       print "("; ppf t; print ","; ppFloatSeq xs; print ")";
       (if lti i (subi n 1) then print "," else print "]"))
     tr
 
 -- pretty print a sequence of ODE traces
-let ppODETraces = lam trs : [[(FloatM, [FloatM])]].
+let ppODETraces = lam trs : [[(Float, [Float])]].
   let n = length trs in
   print "[";
   iteri
-    (lam i : Int. lam tr : [(FloatM, [FloatM])].
+    (lam i : Int. lam tr : [(Float, [Float])].
       ppODETrace tr; (if lti i (subi n 1) then print "," else print "]"))
     trs
 
 -- Prints a distribution of floating point numbers.
-let printFloatDist = lam dist : Dist FloatM.
+let printFloatDist = lam dist : Dist Float.
   match distEmpiricalSamples dist with (samples, weights) in
   iteri
-    (lam i : Int. lam s : FloatM.
+    (lam i : Int. lam s : Float.
       print (float2string s);
       print " ";
       print (float2string (get weights i));
@@ -118,9 +118,9 @@ let printFloatDist = lam dist : Dist FloatM.
     samples
 
 -- Prints a weighted trace.
-let printWeightedTrace = lam samples : [[(FloatM, [FloatM])]]. lam weights : [FloatM].
+let printWeightedTrace = lam samples : [[(Float, [Float])]]. lam weights : [Float].
   iteri
-    (lam i : Int. lam s : [(FloatM, [FloatM])].
+    (lam i : Int. lam s : [(Float, [Float])].
       ppODETrace s;
       print " ";
       print (float2string (get weights i));
@@ -129,15 +129,15 @@ let printWeightedTrace = lam samples : [[(FloatM, [FloatM])]]. lam weights : [Fl
     samples
 
 -- Prints a distribution of a trace.
-let printTraceDist = lam dist : Dist [(FloatM, [FloatM])].
+let printTraceDist = lam dist : Dist [(Float, [Float])].
   match distEmpiricalSamples dist with (samples, weights) in
   printWeightedTrace samples weights
 
 -- Prints weighted traces.
 let printWeightedTraces =
-  lam samples : [[[(FloatM, [FloatM])]]]. lam weights : [FloatM].
+  lam samples : [[[(Float, [Float])]]]. lam weights : [Float].
     iteri
-      (lam i : Int. lam s : [[(FloatM, [FloatM])]].
+      (lam i : Int. lam s : [[(Float, [Float])]].
         ppODETraces s;
         print " ";
         print (float2string (get weights i));
@@ -146,7 +146,7 @@ let printWeightedTraces =
       samples
 
 -- Prints a distribution of traces.
-let printTracesDist = lam dist : Dist [[(FloatM, [FloatM])]].
+let printTracesDist = lam dist : Dist [[(Float, [Float])]].
   match distEmpiricalSamples dist with (samples, weights) in
   printWeightedTraces samples weights
 
@@ -158,7 +158,7 @@ let strJoin = lam del : String. lam strs : [String].
     foldl (lam acc : String. lam el : String. concat acc (concat del el)) hd tl
   end
 
-let floatToJson = lam r : FloatM.
+let floatToJson = lam r : Float.
   if eqf r r then
     if eqf r (divf 1. 0.) then "Infinity"
     else
@@ -171,10 +171,10 @@ let floatToJson = lam r : FloatM.
   else "NaN"
 
 let seqToJson = lam seq : [String]. strJoin "" ["[", strJoin "," seq ,"]"]
-let floatSeqToJson = lam seq : [FloatM]. seqToJson (map floatToJson seq)
-let floatSeqToJson2 = lam seq : [[FloatM]]. seqToJson (map floatSeqToJson seq)
-let floatSeqToJson3 = lam seq : [[[FloatM]]]. seqToJson (map floatSeqToJson2 seq)
-let floatSeqToJson4 = lam seq : [[[[FloatM]]]]. seqToJson (map floatSeqToJson3 seq)
+let floatSeqToJson = lam seq : [Float]. seqToJson (map floatToJson seq)
+let floatSeqToJson2 = lam seq : [[Float]]. seqToJson (map floatSeqToJson seq)
+let floatSeqToJson3 = lam seq : [[[Float]]]. seqToJson (map floatSeqToJson2 seq)
+let floatSeqToJson4 = lam seq : [[[[Float]]]]. seqToJson (map floatSeqToJson3 seq)
 let jsonField = lam t : (String, String). strJoin "" ["\"", t.0, "\":", t.1]
 
 let jsonObject = lam content : [(String, String)].

@@ -9,7 +9,7 @@ writeFile "rode-run.json"
       (create (length samples)
          (lam i : Int.
            seqToJson
-             (map (lam s : (FloatM, FloatM). floatToJson s.1)
+             (map (lam s : (Float, Float). floatToJson s.1)
                 (get (get samples i) j))))
    in
    jsonObject [

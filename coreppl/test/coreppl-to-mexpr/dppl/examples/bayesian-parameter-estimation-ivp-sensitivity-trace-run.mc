@@ -12,7 +12,7 @@ writeFile "bayesian-parameter-estimation-ivp-sensitivity-trace-run.json"
     ("weights", (seqToJson (map floatToJson weights))),
     ("xs", (seqToJson (map floatToJson timesExt))),
     ("trueTrace",
-     floatSeqToJson2 (map (lam x : (FloatM, [FloatM]). x.1) #var"true_dy/dθ_trace")),
+     floatSeqToJson2 (map (lam x : (Float, [Float]). x.1) #var"true_dy/dθ_trace")),
     ("trace",
-     floatSeqToJson3 (map (map (lam t : (FloatM, [FloatM]). t.1)) samples))
+     floatSeqToJson3 (map (lam x : [(Float, [Float])]. map (lam t : (Float, [Float]). t.1) x) samples))
   ])

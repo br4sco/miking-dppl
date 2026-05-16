@@ -63,14 +63,15 @@ lang ElementaryFunctions =
   | CLog {}
   | CPow {}
   | CAbsf {}
+  | CRecipabsf {}
 
   sem tyConstBase d =
-  | CSin _ | CCos _ | CSqrt _ | CExp _ | CLog _ | CAbsf _ ->
+  | CSin _ | CCos _ | CSqrt _ | CExp _ | CLog _ | CAbsf _ | CRecipabsf _ ->
     tyarrows_ [tyfloat_, tyfloat_]
   | CPow _ -> tyarrows_ [tyfloat_, tyfloat_, tyfloat_]
 
   sem constArity =
-  | CSin _ | CCos _ | CSqrt _ | CExp _ | CLog _ | CAbsf _ -> 1
+  | CSin _ | CCos _ | CSqrt _ | CExp _ | CLog _ | CAbsf _ | CRecipabsf _ -> 1
   | CPow _ -> 2
 
   sem getConstStringCode (indent : Int) =
@@ -81,6 +82,7 @@ lang ElementaryFunctions =
   | CLog _ -> "log"
   | CPow _ -> "pow"
   | CAbsf _ -> "absf"
+  | CRecipabsf _ -> "recipabsf"
 
   sem delta info =
   | (CSin _, [TmConst (cr & {val = CFloat fr})]) ->
@@ -101,12 +103,19 @@ lang ElementaryFunctions =
               val = CFloat {
                 fr with val = if ltf fr.val 0. then negf fr.val else fr.val },
               info = info }
+  | (CRecipabsf _,  [TmConst (cr & {val = CFloat fr})]) ->
+    TmConst { cr with
+              val = CFloat {
+                fr with val =
+                  divf 1. (sqrt (addf (mulf fr.val fr.val) (mulf 0.01 0.01)))
+              },
+              info = info }
 
   sem constHasSideEffect =
-  | CSin _ | CCos _ | CSqrt _ | CExp _ | CLog _ | CPow _ | CAbsf _ -> false
+  | CSin _ | CCos _ | CSqrt _ | CExp _ | CLog _ | CPow _ | CAbsf _ | CRecipabsf _ -> false
 
   sem generateConstraintsConst graph info ident =
-  | CSin _ | CCos _ | CSqrt _ | CExp _ | CLog _ | CPow _ | CAbsf _ -> graph
+  | CSin _ | CCos _ | CSqrt _ | CExp _ | CLog _ | CPow _ | CAbsf _ | CRecipabsf _ -> graph
 
   -- Builders
   sem sin_ =| x -> app_ (uconst_ (CSin ())) x
@@ -116,6 +125,7 @@ lang ElementaryFunctions =
   sem log_ =| x -> app_ (uconst_ (CLog ())) x
   sem pow_ =| x -> app_ (uconst_ (CPow ())) x
   sem absf_ =| x -> app_ (uconst_ (CAbsf ())) x
+  sem recipabsf_ =| x -> app_ (uconst_ (CRecipabsf ())) x
 end
 
 

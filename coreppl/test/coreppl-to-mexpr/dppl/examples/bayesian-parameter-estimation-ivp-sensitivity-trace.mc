@@ -6,7 +6,7 @@ let _n = 200
 let _h = 0.05
 let timesExt = create _n (lam i : Int. mulf _h (int2float (addi i 1)))
 
-let diff1 = lam f : FloatA -> ModP ([(FloatA, [FloatA])]). lam x : FloatA.
+let diff1 = lam f : FloatA -> ModP (ModA ([(FloatA, [FloatA])])). lam x : FloatA.
   diff f x 1.
 
 let _model = lam t : ().

@@ -140,6 +140,8 @@ lang ElementaryFunctionsTransform = ElementaryFunctions
   | CExp _ -> withInfo (infoTm tm) (nvar_ (stringToName "exp"))
   | CLog _ -> withInfo (infoTm tm) (nvar_ (stringToName "log"))
   | CPow _ -> withInfo (infoTm tm) (nvar_ (stringToName "pow"))
+  | CAbsf _ -> withInfo (infoTm tm) (nvar_ (stringToName "absf"))
+  | CRecipabsf _ -> withInfo (infoTm tm) (nvar_ (stringToName "recipabsf"))
   | _ -> tm
 
   sem _elementaryFunctionsTransformRuntimeIds =| _ -> [
@@ -724,6 +726,7 @@ lang ADLoader = MCoreLoader + CorePPL + Delayed + Diff +
   | CSqrt _ -> adliftConstH env e "sqrt"
   | CPow _ -> adliftConstH env e "pow"
   | CAbsf _ -> adliftConstH env e "absf"
+  | CRecipabsf _ -> adliftConstH env e "recipabsf"
   | CFloat2string _ -> adliftConstH env e "float2string"
   | const ->
     if env.config.insertFloatAssertions then
