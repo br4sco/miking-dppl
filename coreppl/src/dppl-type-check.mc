@@ -100,80 +100,136 @@ utest dtcEqe (ModR ()) (ModD ()) with false
 utest dtcEqe (ModR ()) (ModR ()) with true
 
 -- Base regularites are either analytic (A), piecewise analytic under analytic
--- partitioning (P), continuous (C).
+-- partitioning (P), smooth (S), locally Lipschitz (L), or continuous (C).
 type DTCReg
 con ModA : () -> DTCReg
 con ModP : () -> DTCReg
+con ModS : () -> DTCReg
+con ModL : () -> DTCReg
 con ModC : () -> DTCReg
 
-let dtcReg = [ModC (), ModP (), ModA ()]
+let dtcReg = [ModC (), ModL (), ModS (), ModP (), ModA ()]
 
 let dtcRegToString : DTCReg -> String = lam c.
   switch c
   case ModA _  then "ModA"
   case ModP _  then "ModP"
+  case ModS _  then "ModS"
+  case ModL _  then "ModL"
   case ModC _  then "ModC"
   end
 
-let _dtcRegToInt : DTCReg -> Int = lam c.
-  switch c
-  case ModC  _ | ModP _ then 0   -- NOTE(oerikss, 2025-10-13): We cannot order C and P.
-  case ModA  _          then 1
-  end
-
--- Less than or equal over coeffects (c ≤ c), where P < A and C < A.
+-- Less than or equal over coeffects (c ≤ c), where P < A and C < L < S < A.
 let dtcLeqc : DTCReg -> DTCReg -> Bool
   = lam a. lam b.
-    match (a, b) with (ModC _, ModP _) | (ModP _, ModC _) then false
-    else leqi (_dtcRegToInt a) (_dtcRegToInt b)
+    switch (a, b)
+    case
+      (ModP _, ModP _)
+    | (ModP _, ModA _)
+    | (ModA _, ModA _)
+    | (ModC _, ModC _)
+    | (ModC _, ModL _)
+    | (ModC _, ModS _)
+    | (ModC _, ModA _)
+    | (ModL _, ModL _)
+    | (ModL _, ModS _)
+    | (ModL _, ModA _)
+    | (ModS _, ModS _)
+    | (ModS _, ModA _)
+    then true
+    case _ then false
+    end
 
 utest dtcLeqc (ModA ()) (ModA ()) with true
 utest dtcLeqc (ModA ()) (ModP ()) with false
+utest dtcLeqc (ModA ()) (ModS ()) with false
+utest dtcLeqc (ModA ()) (ModL ()) with false
 utest dtcLeqc (ModA ()) (ModC ()) with false
 
 utest dtcLeqc (ModP ()) (ModA ()) with true
 utest dtcLeqc (ModP ()) (ModP ()) with true
+utest dtcLeqc (ModP ()) (ModS ()) with false
+utest dtcLeqc (ModP ()) (ModL ()) with false
 utest dtcLeqc (ModP ()) (ModC ()) with false
+
+utest dtcLeqc (ModS ()) (ModA ()) with true
+utest dtcLeqc (ModS ()) (ModP ()) with false
+utest dtcLeqc (ModS ()) (ModS ()) with true
+utest dtcLeqc (ModS ()) (ModL ()) with false
+utest dtcLeqc (ModS ()) (ModC ()) with false
+
+utest dtcLeqc (ModL ()) (ModA ()) with true
+utest dtcLeqc (ModL ()) (ModP ()) with false
+utest dtcLeqc (ModL ()) (ModS ()) with true
+utest dtcLeqc (ModL ()) (ModL ()) with true
+utest dtcLeqc (ModL ()) (ModC ()) with false
 
 utest dtcLeqc (ModC ()) (ModA ()) with true
 utest dtcLeqc (ModC ()) (ModP ()) with false
+utest dtcLeqc (ModC ()) (ModS ()) with true
+utest dtcLeqc (ModC ()) (ModL ()) with true
 utest dtcLeqc (ModC ()) (ModC ()) with true
 
 -- Equality over coeffects (c = c).
 let dtcEqc : DTCReg -> DTCReg -> Bool
   = lam a. lam b.
     switch (a, b)
-    case (ModC _, ModC _)
+    case (ModA _, ModA _)
        | (ModP _, ModP _)
-       | (ModA _, ModA _) then true
+       | (ModS _, ModS _)
+       | (ModL _, ModL _)
+       | (ModC _, ModC _) then true
     case _ then false
     end
 
 utest dtcEqc (ModA ()) (ModA ()) with true
 utest dtcEqc (ModA ()) (ModP ()) with false
+utest dtcEqc (ModA ()) (ModS ()) with false
+utest dtcEqc (ModA ()) (ModL ()) with false
 utest dtcEqc (ModA ()) (ModC ()) with false
 
 utest dtcEqc (ModP ()) (ModA ()) with false
 utest dtcEqc (ModP ()) (ModP ()) with true
+utest dtcEqc (ModP ()) (ModS ()) with false
+utest dtcEqc (ModP ()) (ModL ()) with false
 utest dtcEqc (ModP ()) (ModC ()) with false
+
+utest dtcEqc (ModS ()) (ModA ()) with false
+utest dtcEqc (ModS ()) (ModP ()) with false
+utest dtcEqc (ModS ()) (ModS ()) with true
+utest dtcEqc (ModS ()) (ModL ()) with false
+utest dtcEqc (ModS ()) (ModC ()) with false
+
+utest dtcEqc (ModL ()) (ModA ()) with false
+utest dtcEqc (ModL ()) (ModP ()) with false
+utest dtcEqc (ModL ()) (ModS ()) with false
+utest dtcEqc (ModL ()) (ModL ()) with true
+utest dtcEqc (ModL ()) (ModC ()) with false
 
 utest dtcEqc (ModC ()) (ModA ()) with false
 utest dtcEqc (ModC ()) (ModP ()) with false
+utest dtcEqc (ModC ()) (ModS ()) with false
+utest dtcEqc (ModC ()) (ModL ()) with false
 utest dtcEqc (ModC ()) (ModC ()) with true
 
 -- Compare function for regularities. This function enforces a total order on
--- regularities.
-let dtcCmpc : DTCReg -> DTCReg -> Int = lam c. lam d.
-  switch (c,d)
-  case (ModC _, ModP _) then -1
-  case (ModP _, ModC _) then 1
-  case _ then subi (_dtcRegToInt c) (_dtcRegToInt d)
+-- regularities with order C < L < S < P < A.
+let _dtcRegToInt : DTCReg -> Int = lam c.
+  switch c
+  case ModC _ then 0
+  case ModL _ then 1
+  case ModS _ then 2
+  case ModP _ then 3
+  case ModA _ then 4
   end
 
-utest sort dtcCmpc [ModA (), ModP (), ModC ()]
-  with [ModC (), ModP (), ModA ()]
-utest sort (flip dtcCmpc) [ModC (), ModP (), ModA ()]
-  with [ModA (), ModP (), ModC ()]
+let dtcCmpc : DTCReg -> DTCReg -> Int = lam c. lam d.
+  subi (_dtcRegToInt c) (_dtcRegToInt d)
+
+utest sort dtcCmpc [ModA (), ModP (), ModS (), ModL (), ModC ()]
+  with [ModC (), ModL (), ModS (), ModP (), ModA ()]
+utest sort (flip dtcCmpc) [ModC (), ModL (), ModS (), ModP (), ModA ()]
+  with [ModA (), ModP (), ModS (), ModL (), ModC ()]
 
 -- Coeffect sets
 type DTCRegSet = [DTCReg]
@@ -190,11 +246,15 @@ let dtcRegSetToString : DTCRegSet -> String = lam cs.
 
 let dtcXDown : DTCReg -> DTCRegSet = lam c.
   switch c
-  case ModA _ then [ModC (), ModP (), ModA ()]
+  case ModA _ then [ModC (), ModL (), ModS (), ModP (), ModA ()]
   case ModP _ then [ModP ()]
+  case ModS _ then [ModC (), ModL (), ModS ()]
+  case ModL _ then [ModC (), ModL ()]
   case ModC _ then [ModC ()]
   end
 
+let dtcPS : DTCRegSet = dtcXUnion (dtcXDown (ModP ())) (dtcXDown (ModS ()))
+let dtcPL : DTCRegSet = dtcXUnion (dtcXDown (ModP ())) (dtcXDown (ModL ()))
 let dtcPC : DTCRegSet = dtcXUnion (dtcXDown (ModP ())) (dtcXDown (ModC ()))
 
 let dtcXbar : DTCRegSet -> DTCRegSet =
@@ -205,39 +265,53 @@ let dtcXMax : DTCRegSet -> DTCRegSet = lam cs.
   let cs = sort (flip dtcCmpc) (distinct dtcEqc cs) in
   switch cs
   case [] then []
+  case [ModP _, ModS _] ++ _ then [ModP (), ModS ()]
+  case [ModP _, ModL _] ++ _ then [ModP (), ModL ()]
   case [ModP _, ModC _] ++ _ then [ModP (), ModC ()]
   case [c] ++ _ then [c]
   end
 
 utest dtcXMax (dtcXDown (ModA ())) with [ModA ()]
 utest dtcXMax (dtcXDown (ModP ())) with [ModP ()]
+utest dtcXMax (dtcXDown (ModS ())) with [ModS ()]
+utest dtcXMax (dtcXDown (ModL ())) with [ModL ()]
 utest dtcXMax (dtcXDown (ModC ())) with [ModC ()]
 utest dtcXMax [] with []
+utest dtcXMax dtcPS with [ModP (), ModS ()]
+utest dtcXMax dtcPL with [ModP (), ModL ()]
 utest dtcXMax dtcPC with [ModP (), ModC ()]
 
 -- Returns min regularities.
 let dtcXMin : DTCRegSet -> DTCRegSet = lam cs.
-  let cs = sort dtcCmpc (distinct dtcEqc cs) in
-  switch cs
-  case [] then []
-  case [ModC _, ModP _] ++ _ then [ModC (), ModP ()]
-  case [c] ++ _ then [c]
-  end
+  let cs = sort (flip dtcCmpc) (distinct dtcEqc cs) in
+  filter (lam c. not (any (lam d. and (dtcLeqc d c) (not (dtcEqc d c))) cs)) cs
 
 utest dtcXMin [] with []
-utest dtcXMin (dtcXDown (ModA ())) with [ModC (), ModP ()]
+utest dtcXMin (dtcXDown (ModA ())) with [ModP (), ModC ()]
 utest dtcXMin (dtcXDown (ModP ())) with [ModP ()]
+utest dtcXMin (dtcXDown (ModS ())) with [ModC ()]
+utest dtcXMin (dtcXDown (ModL ())) with [ModC ()]
 utest dtcXMin (dtcXDown (ModC ())) with [ModC ()]
-utest dtcXMin dtcPC with [ModC (), ModP ()]
+utest dtcXMin dtcPS with [ModP (), ModC ()]
+utest dtcXMin dtcPL with [ModP (), ModC ()]
+utest dtcXMin dtcPC with [ModP (), ModC ()]
 utest dtcXMin [ModA (), ModC ()] with [ModC ()]
 
 -- Returns the surface below the regularity `c` according to the partial order
 -- of regularities.
 let dtcLowerSurface : DTCReg -> DTCRegSet = lam c.
   switch c
-  case ModA _ then [ModC (), ModP ()]
-  case ModC _ | ModP _ then []
+  case ModA _ then [ModS (), ModP ()]
+  case ModS _ then [ModL ()]
+  case ModL _ then [ModC ()]
+  case ModP _ | ModC _ then []
   end
+
+utest dtcLowerSurface (ModA ()) with [ModS (), ModP ()]
+utest dtcLowerSurface (ModP ()) with []
+utest dtcLowerSurface (ModS ()) with [ModL ()]
+utest dtcLowerSurface (ModL ()) with [ModC ()]
+utest dtcLowerSurface (ModC ()) with []
 
 -- ┌───────────────┐
 -- │ Annotated AST │
@@ -1829,6 +1903,8 @@ let _R  = ModR () in
 
 let _A  = ModA () in
 let _P  = ModP () in
+let _S  = ModS () in
+let _L  = ModL () in
 let _C  = ModC () in
 
 -- ┌────────────┐
@@ -1903,33 +1979,43 @@ utest applyBoth meetType tybot_ tyunknown_ with dup tybot_ using _eqMeet in
 -- Utils
 
 utest cartesian (lam c. lam d. eqType (tyfloatc_ c) (tyfloatc_ d)) dtcReg dtcReg with
-  [ [true,  false, false]
-  , [false, true,  false]
-  , [false, false, true]
+  [ [true,  false, false, false, false]
+  , [false, true,  false, false, false]
+  , [false, false, true,  false, false]
+  , [false, false, false,  true, false]
+  , [false, false, false, false,  true]
   ] in
 
 utest map (lam c. eraseDecorationsType (tyfloatc_ c)) dtcReg
-  with create 3 (lam. tyfloat_)
+  with create 5 (lam. tyfloat_)
   using eqSeq eqType in
 
 -- Subtyping
 
 let allValidFloatTys =
-  join [[tyfloatX_ []], map (lam c. tyfloatc_ c) dtcReg, [tyfloatX_ dtcPC]] in
+  join
+    [ [tyfloatX_ []]
+    , map (lam c. tyfloatc_ c) dtcReg
+    , [tyfloatX_ dtcPS, tyfloatX_ dtcPL, tyfloatX_ dtcPC]
+    ] in
 
 let tys = snoc allValidFloatTys tyunknown_ in
-let lbls = ["{}", "C", "P", "A", "PC", "Ukn"] in
+let lbls = ["{}", "C", "L", "S", "P", "A", "PS", "PL", "PC", "Ukn"] in
 let _matrixToString =
   matrixToString lbls (cons "  " lbls) (lam x. if x then "T" else "F") in
 
 utest cartesian subtype tys tys with
-  -- {}      C      P      A      PC     Ukn
-  [ [true,  true,  true,  true,  true,  false]    -- {}
-  , [false, true,  false, true,  true,  false]    -- C
-  , [false, false, true,  true,  true,  false]    -- P
-  , [false, false, false, true,  false, false]    -- A
-  , [false, false, false, true,  true,  false]    -- PC
-  , [false, false, false, false, false, true]     -- Ukn
+  -- {}      C     L      S      P      A      PS     PL     PC     Ukn
+  [ [true,  true,  true,  true,  true,  true,  true,  true,  true,  false] -- {}
+  , [false, true,  true,  true,  false, true,  true,  true,  true,  false] -- C
+  , [false, false, true,  true,  false, true,  true,  true,  false, false] -- L
+  , [false, false, false, true,  false, true,  true,  false, false, false] -- S
+  , [false, false, false, false, true,  true,  true,  true,  true,  false] -- P
+  , [false, false, false, false, false, true,  false, false, false, false] -- A
+  , [false, false, false, false, false, true,  true,  false, false, false] -- PS
+  , [false, false, false, false, false, true,  true,  true,  false, false] -- PL
+  , [false, false, false, false, false, true,  true,  true,  true,  false] -- PC
+  , [false, false, false, false, false, false, false, false, false, true]  -- Ukn
   ]
   using eqMatrix eqBool
 else utestDefaultToString _matrixToString _matrixToString in
@@ -1937,14 +2023,19 @@ else utestDefaultToString _matrixToString _matrixToString in
 let _matrixToString =
   matrixToString lbls (cons "  " lbls) (optionMapOr "None" type2str) in
 
+
 utest cartesian joinType tys tys with
-  -- {}                       C                       P                       A                    PC                      Ukn
-  [ [Some (tyfloatX_ []),    Some (tyfloatc_ _C),    Some (tyfloatc_ _P),    Some (tyfloatc_ _A), Some (tyfloatX_ dtcPC), None ()]         -- {}
-  , [Some (tyfloatc_ _C),    Some (tyfloatc_ _C),    Some (tyfloatX_ dtcPC), Some (tyfloatc_ _A), Some (tyfloatX_ dtcPC), None ()]         -- C
-  , [Some (tyfloatc_ _P),    Some (tyfloatX_ dtcPC), Some (tyfloatc_ _P),    Some (tyfloatc_ _A), Some (tyfloatX_ dtcPC), None ()]         -- P
-  , [Some (tyfloatc_ _A),    Some (tyfloatc_ _A),    Some (tyfloatc_ _A),    Some (tyfloatc_ _A), Some (tyfloatc_ _A),    None ()]         -- A
-  , [Some (tyfloatX_ dtcPC), Some (tyfloatX_ dtcPC), Some (tyfloatX_ dtcPC), Some (tyfloatc_ _A), Some (tyfloatX_ dtcPC), None ()]         -- PC
-  , [None (),                None (),                None (),                None (),             None (),                Some tyunknown_] -- Ukn
+  -- {}                      C                       L                       S                       P                       A                    PS                      PL                      PC                      Ukn
+  [ [Some (tyfloatX_ []),    Some (tyfloatc_ _C),    Some (tyfloatc_ _L),    Some (tyfloatc_ _S),    Some (tyfloatc_ _P),    Some (tyfloatc_ _A), Some (tyfloatX_ dtcPS), Some (tyfloatX_ dtcPL), Some (tyfloatX_ dtcPC), None ()]         -- {}
+  , [Some (tyfloatc_ _C),    Some (tyfloatc_ _C),    Some (tyfloatc_ _L),    Some (tyfloatc_ _S),    Some (tyfloatX_ dtcPC), Some (tyfloatc_ _A), Some (tyfloatX_ dtcPS), Some (tyfloatX_ dtcPL), Some (tyfloatX_ dtcPC), None ()]         -- C
+  , [Some (tyfloatc_ _L),    Some (tyfloatc_ _L),    Some (tyfloatc_ _L),    Some (tyfloatc_ _S),    Some (tyfloatX_ dtcPL), Some (tyfloatc_ _A), Some (tyfloatX_ dtcPS), Some (tyfloatX_ dtcPL), Some (tyfloatX_ dtcPL), None ()]         -- L
+  , [Some (tyfloatc_ _S),    Some (tyfloatc_ _S),    Some (tyfloatc_ _S),    Some (tyfloatc_ _S),    Some (tyfloatX_ dtcPS), Some (tyfloatc_ _A), Some (tyfloatX_ dtcPS), Some (tyfloatX_ dtcPS), Some (tyfloatX_ dtcPS), None ()]         -- S
+  , [Some (tyfloatc_ _P),    Some (tyfloatX_ dtcPC), Some (tyfloatX_ dtcPL), Some (tyfloatX_ dtcPS), Some (tyfloatc_ _P),    Some (tyfloatc_ _A), Some (tyfloatX_ dtcPS), Some (tyfloatX_ dtcPL), Some (tyfloatX_ dtcPC), None ()]         -- P
+  , [Some (tyfloatc_ _A),    Some (tyfloatc_ _A),    Some (tyfloatc_ _A),    Some (tyfloatc_ _A),    Some (tyfloatc_ _A),    Some (tyfloatc_ _A), Some (tyfloatc_ _A),    Some (tyfloatc_ _A),    Some (tyfloatc_ _A),    None ()]         -- A
+  , [Some (tyfloatX_ dtcPS), Some (tyfloatX_ dtcPS), Some (tyfloatX_ dtcPS), Some (tyfloatX_ dtcPS), Some (tyfloatX_ dtcPS), Some (tyfloatc_ _A), Some (tyfloatX_ dtcPS), Some (tyfloatX_ dtcPS), Some (tyfloatX_ dtcPS), None ()]         -- PS
+  , [Some (tyfloatX_ dtcPL), Some (tyfloatX_ dtcPL), Some (tyfloatX_ dtcPL), Some (tyfloatX_ dtcPS), Some (tyfloatX_ dtcPL), Some (tyfloatc_ _A), Some (tyfloatX_ dtcPS), Some (tyfloatX_ dtcPL), Some (tyfloatX_ dtcPL), None ()]         -- PL
+  , [Some (tyfloatX_ dtcPC), Some (tyfloatX_ dtcPC), Some (tyfloatX_ dtcPL), Some (tyfloatX_ dtcPS), Some (tyfloatX_ dtcPC), Some (tyfloatc_ _A), Some (tyfloatX_ dtcPS), Some (tyfloatX_ dtcPL), Some (tyfloatX_ dtcPC), None ()]         -- PC
+  , [None (),                None (),                None (),                None (),                None (),                None (),             None (),                None (),                None (),                Some tyunknown_] -- Ukn
   ]
   using eqMatrix (optionEq eqType)
 else utestDefaultToString _matrixToString _matrixToString in
@@ -1953,13 +2044,17 @@ let _matrixToString =
   matrixToString lbls (cons "  " lbls) type2str in
 
 utest cartesian meetType tys tys with
-  -- {}             C             P             A                PC               Ukn
-  [ [tyfloatX_ [], tyfloatX_ [], tyfloatX_ [], tyfloatX_ [],    tyfloatX_ [],    tybot_]         -- {}
-  , [tyfloatX_ [], tyfloatc_ _C, tyfloatX_ [], tyfloatc_ _C,    tyfloatc_ _C,    tybot_]         -- C
-  , [tyfloatX_ [], tyfloatX_ [], tyfloatc_ _P, tyfloatc_ _P,    tyfloatc_ _P,    tybot_]         -- P
-  , [tyfloatX_ [], tyfloatc_ _C, tyfloatc_ _P, tyfloatc_ _A,    tyfloatX_ dtcPC, tybot_]         -- A
-  , [tyfloatX_ [], tyfloatc_ _C, tyfloatc_ _P, tyfloatX_ dtcPC, tyfloatX_ dtcPC, tybot_]         -- PC
-  , [tybot_,       tybot_,       tybot_,       tybot_,          tybot_,          tyunknown_]     -- Ukn
+  -- {}            C             L             S             P             A                PS               PL               PC               Ukn
+  [ [tyfloatX_ [], tyfloatX_ [], tyfloatX_ [], tyfloatX_ [], tyfloatX_ [], tyfloatX_ [],    tyfloatX_ [],    tyfloatX_ [],    tyfloatX_ [],    tybot_]         -- {}
+  , [tyfloatX_ [], tyfloatc_ _C, tyfloatc_ _C, tyfloatc_ _C, tyfloatX_ [], tyfloatc_ _C,    tyfloatc_ _C,    tyfloatc_ _C,    tyfloatc_ _C,    tybot_]         -- C
+  , [tyfloatX_ [], tyfloatc_ _C, tyfloatc_ _L, tyfloatc_ _L, tyfloatX_ [], tyfloatc_ _L,    tyfloatc_ _L,    tyfloatc_ _L,    tyfloatc_ _C,    tybot_]         -- L
+  , [tyfloatX_ [], tyfloatc_ _C, tyfloatc_ _L, tyfloatc_ _S, tyfloatX_ [], tyfloatc_ _S,    tyfloatc_ _S,    tyfloatc_ _L,    tyfloatc_ _C,    tybot_]         -- S
+  , [tyfloatX_ [], tyfloatX_ [], tyfloatX_ [], tyfloatX_ [], tyfloatc_ _P, tyfloatc_ _P,    tyfloatc_ _P,    tyfloatc_ _P,    tyfloatc_ _P,    tybot_]         -- P
+  , [tyfloatX_ [], tyfloatc_ _C, tyfloatc_ _L, tyfloatc_ _S, tyfloatc_ _P, tyfloatc_ _A,    tyfloatX_ dtcPS, tyfloatX_ dtcPL, tyfloatX_ dtcPC, tybot_]         -- A
+  , [tyfloatX_ [], tyfloatc_ _C, tyfloatc_ _L, tyfloatc_ _S, tyfloatc_ _P, tyfloatX_ dtcPS, tyfloatX_ dtcPS, tyfloatX_ dtcPL, tyfloatX_ dtcPC, tybot_]         -- PS
+  , [tyfloatX_ [], tyfloatc_ _C, tyfloatc_ _L, tyfloatc_ _L, tyfloatc_ _P, tyfloatX_ dtcPL, tyfloatX_ dtcPL, tyfloatX_ dtcPL, tyfloatX_ dtcPC, tybot_]         -- PL
+  , [tyfloatX_ [], tyfloatc_ _C, tyfloatc_ _C, tyfloatc_ _C, tyfloatc_ _P, tyfloatX_ dtcPC, tyfloatX_ dtcPC, tyfloatX_ dtcPC, tyfloatX_ dtcPC, tybot_]         -- PC
+  , [tybot_,       tybot_,       tybot_,       tybot_,       tybot_,       tybot_,          tybot_,          tybot_,          tybot_,          tyunknown_]     -- Ukn
   ]
   using eqMatrix eqType
 else utestDefaultToString _matrixToString _matrixToString in
@@ -1986,9 +2081,11 @@ utest
   cartesian
     (lam c. lam d. eqType (arr_ (dtcXDown c)) (arr_ (dtcXDown d))) dtcReg dtcReg
   with
-  [ [true,  false, false]
-  , [false, true,  false]
-  , [false, false, true]
+  [ [true,  false, false, false, false]
+  , [false, true,  false, false, false]
+  , [false, false, true,  false, false]
+  , [false, false, false, true , false]
+  , [false, false, false, false, true]
   ] in
 
 -- Subtyping
