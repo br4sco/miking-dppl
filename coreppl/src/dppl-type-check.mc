@@ -1652,14 +1652,14 @@ end
 
 lang DTCElementaryFunctionsType = ElementaryFunctions + DTCTyConst
   sem dtcConstType info =
-  | (CSin _ | CCos _ | CExp _ | CRecipabsf _, _) ->
+  | (CSin _ | CCos _ | CExp _, _) ->
     let tyfloat = ityfloatc_ info (ModA ()) in
     result.ok (iarr_ info tyfloat tyfloat)
   | (CLog _ | CSqrt _, _) ->
     let tyfloat = ityfloatc_ info (ModP ()) in
     result.ok (iarr_ info tyfloat tyfloat)
-  | (CAbsf _, _) ->
-    let tyfloat = ityfloatX_ info dtcPC in
+  | (CAbsf _ | CRecipabsf _, _) ->
+    let tyfloat = ityfloatX_ info dtcPL in
     result.ok (iarr_ info tyfloat tyfloat)
   | (CPow _, _) ->
     let tyfloat = ityfloatc_ info (ModA ()) in
@@ -3121,7 +3121,7 @@ iter
       using eq else onFailConst c in
 
     ())
-  [CNegf (), CSin (), CCos (), CExp (), CRecipabsf ()];
+  [CNegf (), CSin (), CCos (), CExp ()];
 
 iter
   (lam c.
@@ -3146,8 +3146,13 @@ iter
   [CLog (), CSqrt ()];
 
 utest
-  _typeOf [ (_x, flt _A)] (absf_ x)
+  _typeOf [(_x, flt _A)] (absf_ x)
   with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail in
+
+utest
+  _typeOf [(_x, fltX dtcPL)] (appf1_ (uconst_ (CRecipabsf ())) x)
+  with Right (_D, fltX dtcPL)
   using eq else onFail in
 
 utest

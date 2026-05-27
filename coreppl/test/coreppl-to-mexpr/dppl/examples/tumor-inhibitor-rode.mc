@@ -35,66 +35,74 @@ let _n = 300
 let times = create _n (lam i : Int. mulf _h (int2float (addi i 1)))
 
 -- Parameters
-let r = 1.                      -- Cancer cell growth rate
-let mu = 0.1                    -- Cancer cell death rate
+let z0 = 4.
 let nu = 1.
+let r = 1.                      -- Cancer cell growth rate
+let e = 0.34                    -- Cancer cell growth saturation parameter
+let mu = 0.1                    -- Cancer cell death rate
 let aP = 4.5                    -- Promotor production rate by cancer cells
 let bP = 0.11                   -- Promotor decay rate by cancer cells
 let aI = 0.2                    -- Inhibitor production rate by cancer cells
 let bI = 0.01                   -- Inhibitor decay rate by cancer cells
-let e = 0.34                    -- Cancer cell growth saturation parameter
 
 -- Initial Values
-let x0 = 0.
+let t0 = 0.
 
-let z0 = 4.
 let c0 = 35.
 let p0 = mulf (divf aP bP) c0
 let i0 = divf (addf z0 (mulf aI c0)) bI
 
 let rode = lam t : ().
-  -- Stochastic Process. express inhibitor production from normal tissue.
-  let z = lam y : FloatA.
-    mulf z0
-      (subf 1.
-         (mulf
-            (mulf 2. nu)
-            (mulf y (recipabsf (addf 1. (mulf y y)))))) in
-
-
   -- Process noise
   let w = assume (Wiener ()) in
 
-  -- ODE model
-  let f = lam aI : FloatS.
-    lam x : FloatC.
-      let wx : FloatS = w x in
-      lam y : (FloatS, FloatS, FloatS).
-        match y with (c, p, i)in
-        ( subf
-            (mulf
-               (mulf
-                  (mulf r c)
-                  (recipabsf (addf 1. (mulf e c))))
-               (mulf p (recipabsf (addf 1. i))))
-            (mulf mu c)
-        , subf (mulf aP c) (mulf bP p)
-        , subf (addf (z wx) (mulf aI c)) (mulf bI i) ) in
-
   -- IVP solution
   let sol =
-    lam #var"θ" : FloatS.
-      lam xy0 : (Float, (FloatS, FloatS, FloatS)).
-        lam x : Float.
-          (solve (f #var"θ") xy0 x).1 in
+    lam #var"θ" : (FloatS, FloatS, FloatS, FloatS, FloatS, FloatS, FloatS, FloatS, FloatS).
+      match #var"θ" with (z0, nu, r, e, mu, aP, bP, aI, bI) in
+      lam tcpi0 : (Float, (FloatS, FloatS, FloatS)).
+        lam t : Float.
+          -- Stochastic Process. express inhibitor production from normal tissue.
+          let z = lam w : FloatA.
+            mulf z0
+              (subf 1.
+                 (mulf
+                    (mulf 2. nu)
+                    (mulf w (recipabsf (addf 1. (mulf w w)))))) in
 
-  -- Trace solution and its sensitivity
-  let #var"θ" = aI in
-  [ trace (sol #var"θ") (x0, (c0, p0, i0)) times
+          -- ODE model
+          let f1 = lam cpi : (FloatS, FloatS, FloatS).
+            match cpi with (c, p, i) in
+            subf
+              (mulf
+                 (mulf
+                    (mulf r c)
+                    (recipabsf (addf 1. (mulf e c))))
+                 (mulf p (recipabsf (addf 1. i))))
+              (mulf mu c) in
+          let f2 = lam cpi : (FloatS, FloatS, FloatS).
+            match cpi with (c, p, i) in subf (mulf aP c) (mulf bP p) in
+          let f3 = lam cpi : (FloatS, FloatS, FloatS). lam w : FloatS.
+            match cpi with (c, p, i) in
+            subf (addf (z w) (mulf aI c)) (mulf bI i) in
+          let f =
+            lam t : FloatC.
+              let wt : FloatS = w t in
+              lam cpi : (FloatS, FloatS, FloatS).
+                (f1 cpi, f2 cpi, f3 cpi wt) in
+
+          -- Solution
+          (solve f tcpi0 t).1 in
+
+  -- Trace solution, its sensitivity, and the wiener realization
+  let #var"θ" = (z0, nu, r,  e,  mu, aP, bP, aI, bI) in
+  let ej       = (0., 0., 0., 0., 0., 0., 0., 1., 0.) in
+  [ trace (sol #var"θ") (t0, (c0, p0, i0)) times
   , diff
-      (lam #var"θ" : FloatS. trace (sol #var"θ") (x0, (c0, p0, i0)) times)
+      (lam #var"θ" : (FloatS, FloatS, FloatS, FloatS, FloatS, FloatS, FloatS, FloatS, FloatS).
+        trace (sol #var"θ") (t0, (c0, p0, i0)) times)
       #var"θ"
-      1.
+      ej
   , map (lam t : Float. (t, (w t, 0., 0.))) times
   ]
 
