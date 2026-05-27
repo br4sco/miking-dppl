@@ -474,10 +474,12 @@ lang DTCFloatTypeAst = DTCAstBase + FloatTypeAst + PrettyPrint
   | TyFloatC r ->
     if null r.cs then (env, "Float")
     else if dtcXEq r.cs (dtcXDown (ModC ())) then (env, "FloatC")
-      else if dtcXEq r.cs (dtcXDown (ModP ())) then (env, "FloatP")
-           else if dtcXEq r.cs (dtcXDown (ModA ())) then (env, "FloatA")
-                else if dtcXEq r.cs dtcPC then (env, "FloatPC")
-                     else (env, concat "Float" (dtcRegSetToString r.cs))
+         else if dtcXEq r.cs (dtcXDown (ModP ())) then (env, "FloatP")
+              else if dtcXEq r.cs (dtcXDown (ModA ())) then (env, "FloatA")
+                   else if dtcXEq r.cs dtcPS then (env, "FLoatPS")
+                        else if dtcXEq r.cs dtcPL then (env, "FLoatPL")
+                             else if dtcXEq r.cs dtcPC then (env, "FloatPC")
+                                  else (env, concat "Float" (dtcRegSetToString r.cs))
 
   -- ┌───────────┐
   -- │ Utilities │
@@ -1489,14 +1491,22 @@ lang DTCTypeOfDiff = Diff + IsIsomorficToRn + DTCTypeOfBase
                         (ModD ()))
                 then ok ()
                 else
-                  let withP = withX (dtcXDown (ModP ())) in
+                  let withS = withX (dtcXDown (ModS ())) in
                   if subtype fn.ty
                        (tyarrowXe_
-                          (withP arr.from) (withP arr.to)
-                          [ModP ()]
+                          (withS arr.from) (withS arr.to)
+                          [ModS ()]
                           (ModD ()))
                   then ok ()
-                  else fnerr ()
+                  else
+                    let withP = withX (dtcXDown (ModP ())) in
+                    if subtype fn.ty
+                         (tyarrowXe_
+                            (withP arr.from) (withP arr.to)
+                            [ModP ()]
+                            (ModD ()))
+                    then ok ()
+                    else fnerr ()
               else
                 result.err
                   (DTCArgError (infoTm r.darg, Some (withA arr.from, darg.ty)))
@@ -1550,7 +1560,7 @@ lang DTCTypeOfSolveODE = SolveODE + IsIsomorficToRn + DTCTypeOfBase
                         { fv = fv
                         , ty =
                           mulXType cs
-                            (itytuple_ r.info [tyfloatc_ c, stateTy])
+                            (itytuple_ r.info [tyfloatc_ (ModA ()), stateTy])
                         , e = foldl1 dtcMule [model.e, init.e, endTime.e]
                         }
                     else
@@ -3208,6 +3218,26 @@ utest
 
 utest
   _typeOf
+    [ (_x, arrc [(flt _S, [_S])] (flt _S))
+    , (_y, flt _S)
+    , (_z, flt _S)
+    ]
+    (diff_ x y z)
+  with Right (_D, flt _S)
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _S, [])] (fltX []))
+    , (_y, fltX [])
+    , (_z, fltX [])
+    ]
+    (diff_ x y z)
+  with Right (_D, fltX [])
+  using eq else onFail in
+
+utest
+  _typeOf
     [ (_x, arrc [(flt _P, [_P])] (flt _P))
     , (_y, flt _P)
     , (_z, flt _P)
@@ -3281,6 +3311,36 @@ utest
     [ (_x, arrc [(flt _C, [_P, _A])] (flt _A))
     , (_y, flt _C)
     , (_z, flt _C)
+    ]
+    (diff_ x y z)
+  with Left [DTCDiffFnError (NoInfo (), None ())]
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _S, [_A])] (flt _S))
+    , (_y, flt _S)
+    , (_z, flt _S)
+    ]
+    (diff_ x y z)
+  with Left [DTCDiffFnError (NoInfo (), None ())]
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _S, [_P])] (flt _S))
+    , (_y, flt _S)
+    , (_z, flt _S)
+    ]
+    (diff_ x y z)
+  with Left [DTCDiffFnError (NoInfo (), None ())]
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _S, [_C])] (flt _S))
+    , (_y, flt _S)
+    , (_z, flt _S)
     ]
     (diff_ x y z)
   with Left [DTCDiffFnError (NoInfo (), None ())]
@@ -3504,6 +3564,14 @@ utest _test (flt _P) (flt _P) tybool_
 
 utest _test (flt _P) tybool_ (flt _P)
   with Left [DTCJoinError (NoInfo (), None ())]
+  using eq else onFail in
+
+-- ┌──────────┐
+-- │ Examples │
+-- └──────────┘
+
+utest _typeOf [(_x, flt _L), (_y, fltX dtcPS)] (lam_ [(_z, flt _A)] (addf_ x y))
+  with Right (ModD (), arrc [(flt _A, [_L, _S, _P])] (fltX dtcPS))
   using eq else onFail in
 
 -- ┌───────────────────────────┐

@@ -21,14 +21,14 @@ let solve =
 
 let trace =
   lam y : (Float, (FloatA, FloatA, FloatA)) -> ModA (Float ->
-    (ModA (Float, (FloatA, FloatA, FloatA)))).
-    lam xy0 : (Float, (FloatA, FloatA, FloatA)).
+    (ModA (FloatA, FloatA, FloatA))).
+    lam xy0 : (Float, (Float, Float, Float)).
       lam xs : [Float].
         tail
           (reverse
              (foldl
                 (lam xys : [(Float, (FloatA, FloatA, FloatA))]. lam x1 : Float.
-                  cons (y (head xys) x1) xys)
+                  cons (x1, (y (head xys) x1)) xys)
                 [xy0] xs))
 
 let _h = 0.2
@@ -84,7 +84,7 @@ let rode = lam t : ().
     lam #var"θ" : FloatA.
       lam xy0 : (Float, (FloatA, FloatA, FloatA)).
         lam x : Float.
-          solve (f #var"θ") xy0 x in
+          (solve (f #var"θ") xy0 x).1 in
 
   -- Trace solution and its sensitivity
   let #var"θ" = aI in
