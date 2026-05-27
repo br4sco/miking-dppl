@@ -1,8 +1,8 @@
 include "../lib.mc"
 
 let solve =
-  lam f : FloatC -> ModC (ModA (FloatA -> ModC (ModA FloatA))).
-    lam xy0 : (FloatC, FloatA).
+  lam f : FloatC -> FloatS -> ModS FloatS.
+    lam xy0 : (FloatC, FloatS).
       lam x1 : FloatC.
         solveode (EFEC
           { add = lam x : FloatA. lam y : FloatA. addf x y
@@ -35,7 +35,7 @@ let rode = lam t : ().
   let w = assume (Wiener ()) in
 
   -- ODE model
-  let f = lam x : FloatC. lam y : FloatA. subf (sin (w x)) y in
+  let f = lam x : FloatC. let wx : FloatS = w x in lam y : FloatS. subf (sin wx) y in
 
   -- IVP solution
   let y = lam xy0 : (Float, Float). lam x : Float. solve f xy0 x in
@@ -51,7 +51,14 @@ let #var"Dist_RODE" = infer (Importance { particles = 5 }) rode
 mexpr
 
 match distEmpiricalSamples #var"Dist_RODE" with (samples, weights) in
-let samples = map (map (map (lam t : (Float, Float). (t.0, [t.1])))) samples in
+let samples = map
+                (lam xs : [[(Float, Float)]].
+                  map
+                    (lam ts : [(Float, Float)].
+                      map (lam t : (Float, Float). (t.0, [t.1]))
+                        ts)
+                    xs)
+                samples in
 printWeightedTraces samples weights
 
 -- Local Variables:

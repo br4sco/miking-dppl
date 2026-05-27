@@ -2,9 +2,8 @@ include "../lib.mc"
 
 let solve =
   lam f :
-    FloatC -> ModC (ModA ((FloatA, FloatA, FloatA) ->
-      (ModC (ModA (FloatA, FloatA, FloatA))))).
-    lam xy0 : (FloatC, (FloatA, FloatA, FloatA)).
+    FloatC -> ModS ((FloatS, FloatS, FloatS) -> (ModS (FloatS, FloatS, FloatS))).
+    lam xy0 : (FloatC, (FloatS, FloatS, FloatS)).
       lam x1 : FloatC.
         solveode (EFEC {
           add = addt,
@@ -20,14 +19,14 @@ let solve =
           f xy0 x1
 
 let trace =
-  lam y : (Float, (FloatA, FloatA, FloatA)) -> ModA (Float ->
-    (ModA (FloatA, FloatA, FloatA))).
+  lam y : (Float, (FloatS, FloatS, FloatS)) -> ModS (Float ->
+    (ModS (FloatS, FloatS, FloatS))).
     lam xy0 : (Float, (Float, Float, Float)).
       lam xs : [Float].
         tail
           (reverse
              (foldl
-                (lam xys : [(Float, (FloatA, FloatA, FloatA))]. lam x1 : Float.
+                (lam xys : [(Float, (FloatS, FloatS, FloatS))]. lam x1 : Float.
                   cons (x1, (y (head xys) x1)) xys)
                 [xy0] xs))
 
@@ -67,22 +66,25 @@ let rode = lam t : ().
   let w = assume (Wiener ()) in
 
   -- ODE model
-  let f = lam aI : FloatA. lam x : FloatC. lam y : (FloatA, FloatA, FloatA).
-    match y with (c, p, i)in
-    ( subf
-        (mulf
-           (mulf
-              (mulf r c)
-              (recipabsf (addf 1. (mulf e c))))
-           (mulf p (recipabsf (addf 1. i))))
-        (mulf mu c)
-    , subf (mulf aP c) (mulf bP p)
-    , subf (addf (z (w x)) (mulf aI c)) (mulf bI i) ) in
+  let f = lam aI : FloatS.
+    lam x : FloatC.
+      let wx : FloatS = w x in
+      lam y : (FloatS, FloatS, FloatS).
+        match y with (c, p, i)in
+        ( subf
+            (mulf
+               (mulf
+                  (mulf r c)
+                  (recipabsf (addf 1. (mulf e c))))
+               (mulf p (recipabsf (addf 1. i))))
+            (mulf mu c)
+        , subf (mulf aP c) (mulf bP p)
+        , subf (addf (z wx) (mulf aI c)) (mulf bI i) ) in
 
   -- IVP solution
   let sol =
-    lam #var"θ" : FloatA.
-      lam xy0 : (Float, (FloatA, FloatA, FloatA)).
+    lam #var"θ" : FloatS.
+      lam xy0 : (Float, (FloatS, FloatS, FloatS)).
         lam x : Float.
           (solve (f #var"θ") xy0 x).1 in
 
@@ -90,7 +92,7 @@ let rode = lam t : ().
   let #var"θ" = aI in
   [ trace (sol #var"θ") (x0, (c0, p0, i0)) times
   , diff
-      (lam #var"θ" : FloatA. trace (sol #var"θ") (x0, (c0, p0, i0)) times)
+      (lam #var"θ" : FloatS. trace (sol #var"θ") (x0, (c0, p0, i0)) times)
       #var"θ"
       1.
   , map (lam t : Float. (t, (w t, 0., 0.))) times

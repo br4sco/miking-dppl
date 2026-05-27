@@ -474,12 +474,14 @@ lang DTCFloatTypeAst = DTCAstBase + FloatTypeAst + PrettyPrint
   | TyFloatC r ->
     if null r.cs then (env, "Float")
     else if dtcXEq r.cs (dtcXDown (ModC ())) then (env, "FloatC")
-         else if dtcXEq r.cs (dtcXDown (ModP ())) then (env, "FloatP")
-              else if dtcXEq r.cs (dtcXDown (ModA ())) then (env, "FloatA")
-                   else if dtcXEq r.cs dtcPS then (env, "FLoatPS")
-                        else if dtcXEq r.cs dtcPL then (env, "FLoatPL")
-                             else if dtcXEq r.cs dtcPC then (env, "FloatPC")
-                                  else (env, concat "Float" (dtcRegSetToString r.cs))
+         else if dtcXEq r.cs (dtcXDown (ModL ())) then (env, "FloatL")
+              else if dtcXEq r.cs (dtcXDown (ModS ())) then (env, "FloatS")
+                   else if dtcXEq r.cs (dtcXDown (ModP ())) then (env, "FloatP")
+                        else if dtcXEq r.cs (dtcXDown (ModA ())) then (env, "FloatA")
+                             else if dtcXEq r.cs dtcPS then (env, "FLoatPS")
+                                  else if dtcXEq r.cs dtcPL then (env, "FLoatPL")
+                                       else if dtcXEq r.cs dtcPC then (env, "FloatPC")
+                                            else (env, concat "Float" (dtcRegSetToString r.cs))
 
   -- ┌───────────┐
   -- │ Utilities │
@@ -954,8 +956,9 @@ lang DTCTypeError = Ast + ConstAst + DTCEnv + DTCFloatTypeAst + PrettyPrint
     (info,
      _typeErrorToMsg2
        [ "Determinstic function isomorphic to:"
-       , "FloatA -> FloatAⁿ ->{C,A} FloatAⁿ or"
-       , "FloatC -> FloatAⁿ ->{C,A} FloatAⁿ"
+       , "FloatA -> FloatAⁿ ->{C,S,A} FloatAⁿ or"
+       , "FloatC -> FloatSⁿ ->{S} FloatAⁿ or"
+       , "FloatC -> FloatLⁿ ->{C} FloatAⁿ"
        ]
        [type2str ty])
   | DTCDiffFnError (info, Some ty) ->
@@ -963,6 +966,7 @@ lang DTCTypeError = Ast + ConstAst + DTCEnv + DTCFloatTypeAst + PrettyPrint
      _typeErrorToMsg2
        [ "Determinstic function isomorphic to:"
        , "FloatAⁿ ->{P,A} FloatAᵐ or"
+       , "FloatSⁿ ->{S} FloatSᵐ or"
        , "FloatPⁿ ->{P} FloatPᵐ"
        ]
        [type2str ty])
@@ -1530,49 +1534,65 @@ lang DTCTypeOfSolveODE = SolveODE + IsIsomorficToRn + DTCTypeOfBase
       (lam method. lam model. lam init. lam endTime.
         let modelerr = lam.
           result.err (DTCSolveODEModelError (infoTm r.model, Some model.ty)) in
-        match model.ty with
-          TyArrowCE (arr1 & { from = TyFloatC {cs = cs}, to = TyArrowCE arr2 })
-        then
+        match model.ty with TyArrowCE {to = TyArrowCE arr2} then
           if isIsomorficToRn arr2.from then
-            let stateTy = withX (dtcXDown (ModA ())) arr2.from in
-            let initTy = lam c. itytuple_ r.info [tyfloatc_ c, stateTy] in
-            let modelTy = lam c.
-              let cs = [ModC (), ModA ()] in
+            let stateTy = lam c. withX (dtcXDown c) arr2.from in
+            let ok = lam.
+              let fv =
+                foldl1 setUnion [model.fv, init.fv, endTime.fv] in
+              let cs = dtcEnvAccPromote (dtcEnvWeaken fv env) in
+              result.ok
+                { fv = fv
+                , ty =
+                  mulXType cs
+                    (itytuple_ r.info [tyfloatc_ (ModA ()), stateTy (ModA ())])
+                , e = foldl1 dtcMule [model.e, init.e, endTime.e]
+                } in
+            let initTy = lam x. lam y.
+              itytuple_ r.info [tyfloatc_ x, withX (dtcXDown y) arr2.from]
+            in
+            let initTyErr = lam x. lam y.
+              result.err
+                (DTCArgError (infoTm r.init, Some (initTy x y, init.ty))) in
+            let endTimeTy = lam cs. ityfloatX_ r.info cs in
+            let endTimeErr = lam cs.
+              result.err
+                (DTCArgError
+                  (infoTm r.endTime, Some (endTimeTy cs, endTime.ty))) in
+            let modelTy = lam x. lam y. lam cs1. lam cs2.
               tyarrowXe_
-                (tyfloatc_ c)
-                (tyarrowXe_ stateTy stateTy cs (ModD ()))
-                cs (ModD ()) in
-            result.bind
-              (if dtcXEq cs (dtcXDown (ModA ())) then result.ok (ModA ())
-               else if dtcXEq cs (dtcXDown (ModC ())) then result.ok (ModC ())
-                    else modelerr ())
-              (lam c.
-                let modelTy = modelTy c in
-                let initTy = initTy c in
-                let endTimeTy = mulXType (dtcXDown c) (tyfloatX_ dtcPC) in
-                if subtype model.ty modelTy then
-                  if subtype init.ty initTy then
-                    if subtype endTime.ty endTimeTy then
-                      let fv =
-                        foldl1 setUnion [model.fv, init.fv, endTime.fv] in
-                      let cs = dtcEnvAccPromote (dtcEnvWeaken fv env) in
-                      result.ok
-                        { fv = fv
-                        , ty =
-                          mulXType cs
-                            (itytuple_ r.info [tyfloatc_ (ModA ()), stateTy])
-                        , e = foldl1 dtcMule [model.e, init.e, endTime.e]
-                        }
-                    else
-                      result.err
-                        (DTCArgError
-                          (infoTm r.endTime, Some (endTimeTy, endTime.ty)))
-                  else
-                    result.err
-                      (DTCArgError (infoTm r.init, Some (initTy, init.ty)))
+                (tyfloatc_ x)
+                (tyarrowXe_ (stateTy y)  (stateTy y) cs2 (ModD ()))
+                cs1
+                (ModD ())
+            in
+            if subtype model.ty
+                 (modelTy (ModA ()) (ModA ())
+                    [ModC (), ModS (), ModA ()]
+                    (dtcXDown (ModA ())))
+            then
+              if subtype init.ty (initTy (ModA ()) (ModA ())) then
+                if subtype endTime.ty (endTimeTy dtcPC) then ok ()
+                else endTimeErr dtcPC
+              else initTyErr (ModA ()) (ModA ())
+            else
+              if subtype model.ty
+                   (modelTy (ModC ()) (ModS ()) [ModS ()] [ModS ()])
+              then
+                if subtype init.ty (initTy (ModC ()) (ModS ())) then
+                  if subtype endTime.ty (endTimeTy (dtcXDown (ModC ()))) then ok ()
+                  else endTimeErr dtcPC
+                else initTyErr (ModC ()) (ModS ())
+              else
+                if subtype model.ty
+                     (modelTy (ModC ()) (ModL ()) [ModC ()] (dtcXDown (ModA ())))
+                then
+                  if subtype init.ty (initTy (ModC ()) (ModC ())) then
+                    if subtype endTime.ty (endTimeTy dtcPC) then ok ()
+                    else endTimeErr dtcPC
+                  else initTyErr (ModC ()) (ModC ())
                 else
-                  result.err
-                    (DTCArgError (infoTm r.model, Some (modelTy, model.ty))))
+                  modelerr ()
           else modelerr ()
         else modelerr ())
 end
@@ -3410,7 +3430,7 @@ utest
     , (_z, flt _C)
     ]
     (solveode_ x y z)
-  with Right (_D, tytuple_ [flt _A, flt _A])
+  with Left [DTCSolveODEModelError (NoInfo (), None ())]
   using eq else onFail in
 
 utest
@@ -3443,9 +3463,8 @@ let _test = lam cs1. lam cs2.
     ]
     (solveode_ x y z) in
 
-utest _test [_C, _A, _P] [_C, _A] with Left [DTCArgError (NoInfo (), None ())]
-  using eq else onFail in
-utest _test [_C, _A] [_C, _A, _P] with Left [DTCArgError (NoInfo (), None ())]
+utest _test [_C, _A, _P] [_C, _A] with
+  Left [DTCSolveODEModelError (NoInfo (), None ())]
   using eq else onFail in
 
 utest
@@ -3465,7 +3484,7 @@ utest
     , (_z, fltX dtcPC)
     ]
     (solveode_ x y z)
-  with Left [DTCArgError (NoInfo (), None ())]
+  with Left [DTCSolveODEModelError (NoInfo (), None ())]
   using eq else onFail in
 
 let _test = lam e1. lam e2.
@@ -3476,9 +3495,9 @@ let _test = lam e1. lam e2.
       ]
       (solveode_ x y z) in
 
-utest _test _R _D with Left [DTCArgError (NoInfo (), None ())]
+utest _test _R _D with Left [DTCSolveODEModelError (NoInfo (), None ())]
   using eq else onFail in
-utest _test _D _R with Left [DTCArgError (NoInfo (), None ())]
+utest _test _D _R with Left [DTCSolveODEModelError (NoInfo (), None ())]
   using eq else onFail in
 
 let _test = lam ty1. lam ty2. lam ty3.
@@ -3490,7 +3509,7 @@ let _test = lam ty1. lam ty2. lam ty3.
     (solveode_ x y z) in
 
 utest _test (flt _A) (flt _A) (tytuple_ [flt _A])
-  with Left [DTCArgError (NoInfo (), None ())]
+  with Left [DTCSolveODEModelError (NoInfo (), None ())]
   using eq else onFail in
 utest _test tyint_ (flt _A) (flt _A)
   with Left [DTCSolveODEModelError (NoInfo (), None ())]
@@ -3499,7 +3518,7 @@ utest _test (flt _A) tyint_ (flt _A)
   with Left [DTCSolveODEModelError (NoInfo (), None ())]
   using eq else onFail in
 utest _test (flt _A) (flt _A) tyint_
-  with Left [DTCArgError (NoInfo (), None ())]
+  with Left [DTCSolveODEModelError (NoInfo (), None ())]
   using eq else onFail in
 
 let _test = lam ty1. lam ty2. lam ty3.

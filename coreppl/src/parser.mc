@@ -294,12 +294,18 @@ lang DPPLParser =
   | "DelaySeqF" -> Some(0, lam lst. TyDelaySeqF { info = info})
   | "ModA" -> Some(1, lam seq. TyModC { c = ModA (), info = info, ty = get seq 0 })
   | "ModP" -> Some(1, lam seq. TyModC { c = ModP (), info = info, ty = get seq 0 })
+  | "ModS" -> Some(1, lam seq. TyModC { c = ModS (), info = info, ty = get seq 0 })
+  | "ModL" -> Some(1, lam seq. TyModC { c = ModL (), info = info, ty = get seq 0 })
   | "ModC" -> Some(1, lam seq. TyModC { c = ModC (), info = info, ty = get seq 0 })
   | "ModR" -> Some(1, lam seq. TyModE { e = ModR (), info = info, ty = get seq 0 })
   | "FloatA" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcXDown (ModA ()) })
-  | "FloatPC" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcPC })
   | "FloatP" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcXDown (ModP ()) })
+  | "FloatS" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcXDown (ModS ()) })
+  | "FloatL" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcXDown (ModL ()) })
   | "FloatC" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcXDown (ModC ()) })
+  | "FloatPS" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcPS })
+  | "FloatPL" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcPL })
+  | "FloatPC" -> Some(0, lam seq. TyFloatC { info = info, cs = dtcPC })
 
   sem decorateTypesExn : Expr -> Expr
   sem decorateTypesExn =| tm ->
