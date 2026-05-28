@@ -6,12 +6,9 @@ let _n = 200
 let _h = 0.05
 let timesExt = create _n (lam i : Int. mulf _h (int2float (addi i 1)))
 
-let diff1 = lam f : FloatA -> ModP (ModA ([(FloatA, [FloatA])])). lam x : FloatA.
-  diff f x 1.
-
 let _model = lam t : ().
   let #var"θ" = assume #var"Dist_θ" in
-  diff1 (lam #var"θ" : FloatA. trace (y #var"θ") (x0, y0) timesExt) #var"θ"
+  diff (lam #var"θ" : FloatA. trace (y #var"θ") (x0, y0) timesExt) #var"θ" 1.
 
 let #var"Dist_dy/dθ_trace" = infer (Importance { particles = 100 }) _model
 
@@ -20,7 +17,7 @@ mexpr
 match distEmpiricalSamples #var"Dist_dy/dθ_trace" with (samples, weights) in
 let samples =
   map
-    (mapi (lam i : Int. lam t : (FloatM, [FloatM]). (get timesExt i, t.1)))
+    (mapi (lam i : Int. lam t : (Float, [Float]). (get timesExt i, t.1)))
     samples in
 printWeightedTrace samples weights
 

@@ -3,14 +3,14 @@ include "../lib.mc"
 let solve =
   lam f : FloatA -> ModC (ModA (FloatA -> ModC (ModA (FloatA)))).
     lam xy0 : (FloatA, FloatA).
-      lam x : FloatPC.
+      lam x : Float.
         solveode
           (RK4EC
             { add = lam x : FloatA. lam y : FloatA. addf x y
             , smul = lam x : FloatA. lam y : FloatA. mulf x y
             , stepSize = 1e-2
             , ok =
-              lam yh : FloatP. lam y2h2 : FloatP.
+              lam yh : Float. lam y2h2 : Float.
                 let err = subf yh y2h2 in ltf (mulf err err) 1e-2
             })
           f xy0 x
@@ -18,14 +18,14 @@ let solve =
 let solve2 =
   lam f : FloatA -> ModC (ModA ((FloatA, FloatA) -> ModC (ModA (FloatA, FloatA)))).
     lam xy0 : (FloatA, (FloatA, FloatA)).
-      lam x : FloatPC.
+      lam x : Float.
         solveode
           (RK4EC
             { add = addp
             , smul = smulp
             , stepSize = 1e-2
             , ok =
-              lam yh : (FloatP, FloatP). lam y2h2 : (FloatP, FloatP).
+              lam yh : (Float, Float). lam y2h2 : (Float, Float).
                 ltf (l2normp (subp yh y2h2)) 1e-2 })
           f xy0 x
 
@@ -41,11 +41,11 @@ let f = lam #var"θ" : FloatA. lam x : FloatA. lam y : FloatA.
   mulf (negf #var"θ") y
 
 -- Sensitivity with diff of solve
-let s1 = lam #var"θ" : FloatA. lam x1 : FloatP.
+let s1 = lam #var"θ" : FloatA. lam x1 : Float.
   diff (lam #var"θ" : FloatA. solve (f #var"θ") (x0, y0) x1) #var"θ" 1.
 
 -- Sensitivity with solve with diff
-let s2 = lam #var"θ" : FloatA. lam x1 : FloatP.
+let s2 = lam #var"θ" : FloatA. lam x1 : Float.
   let g = lam x : FloatA. lam y : (FloatA, FloatA).
     match y with (y, s) in
     let f = lam #var"θ" : FloatA. lam y : FloatA. f #var"θ" x y in
@@ -57,8 +57,8 @@ let s2 = lam #var"θ" : FloatA. lam x1 : FloatP.
 
 let _model = lam t : ().
   let #var"θ" = assume (Uniform 0.1 0.5) in
-  [ map (lam x : FloatP. match s1 #var"θ" x with (_, s) in (x, [s])) times
-  , map (lam x : FloatP. match s2 #var"θ" x with (_, s) in (x, [s])) times
+  [ map (lam x : Float. match s1 #var"θ" x with (_, s) in (x, [s])) times
+  , map (lam x : Float. match s2 #var"θ" x with (_, s) in (x, [s])) times
   ]
 
 let #var"Dist_sθ" = infer (Importance { particles = 10 }) _model

@@ -1491,7 +1491,7 @@ lang DTCTypeOfDiff = Diff + IsIsomorficToRn + DTCTypeOfBase
                 if subtype fn.ty
                      (tyarrowXe_
                         (withA arr.from) (withA arr.to)
-                        [ModP (), ModA ()]
+                        [ModS (), ModA ()]
                         (ModD ()))
                 then ok ()
                 else
@@ -1652,13 +1652,13 @@ end
 
 lang DTCElementaryFunctionsType = ElementaryFunctions + DTCTyConst
   sem dtcConstType info =
-  | (CSin _ | CCos _ | CExp _, _) ->
+  | (CSin _ | CCos _ | CExp _ | CRecipabsf _, _) ->
     let tyfloat = ityfloatc_ info (ModA ()) in
     result.ok (iarr_ info tyfloat tyfloat)
   | (CLog _ | CSqrt _, _) ->
     let tyfloat = ityfloatc_ info (ModP ()) in
     result.ok (iarr_ info tyfloat tyfloat)
-  | (CAbsf _ | CRecipabsf _, _) ->
+  | (CAbsf _, _) ->
     let tyfloat = ityfloatX_ info dtcPL in
     result.ok (iarr_ info tyfloat tyfloat)
   | (CPow _, _) ->
@@ -3208,7 +3208,7 @@ utest
     , (_z, flt _A)
     ]
     (diff_ x y z)
-  with Right (_D, flt _A)
+  with Left [DTCDiffFnError (NoInfo (), None ())]
   using eq else onFail in
 
 utest
@@ -3218,7 +3218,7 @@ utest
     , (_z, flt _P)
     ]
     (diff_ x y z)
-  with Right (_D, flt _P)
+  with Left [DTCDiffFnError (NoInfo (), None ())]
   using eq else onFail in
 
 utest
@@ -3233,7 +3233,27 @@ utest
 
 utest
   _typeOf
-    [ (_x, arrc [(flt _A, [_P, _A])] (flt _C))
+    [ (_x, arrc [(flt _A, [_A,_S])] (flt _A))
+    , (_y, fltX [_S])
+    , (_z, fltX [_S])
+    ]
+    (diff_ x y z)
+  with Right (_D, flt _A)
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _A, [_S])] (flt _A))
+    , (_y, fltX [_S])
+    , (_z, fltX [_S])
+    ]
+    (diff_ x y z)
+  with Right (_D, flt _S)
+  using eq else onFail in
+
+utest
+  _typeOf
+    [ (_x, arrc [(flt _A, [_A])] (flt _C))
     , (_y, flt _A)
     , (_z, flt _A)
     ]
@@ -3283,7 +3303,7 @@ utest
 
 utest
   _typeOf
-    [ (_x, arrc [(tytuple_ [flt _A, flt _A], [_P, _A])] (tytuple_ [flt _A]))
+    [ (_x, arrc [(tytuple_ [flt _A, flt _A], [_A])] (tytuple_ [flt _A]))
     , (_y, tytuple_ [flt _A, flt _A])
     , (_z, tytuple_ [flt _A, flt _A])
     ]
@@ -3293,7 +3313,7 @@ utest
 
 utest
   _typeOf
-    [ (_x, arrc [(tyseq_ (flt _A), [_P, _A])] (tyseq_ (flt _A)))
+    [ (_x, arrc [(tyseq_ (flt _A), [_A])] (tyseq_ (flt _A)))
     , (_y, tyseq_ (flt _A))
     , (_z, tyseq_ (flt _A))
     ]

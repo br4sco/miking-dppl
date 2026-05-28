@@ -14,7 +14,7 @@ let solve =
             , add = adds
             , smul = smuls
             , ok =
-              lam yh : [FloatP]. lam y2h2 : [FloatP].
+              lam yh : [Float]. lam y2h2 : [Float].
                 ltf (l2norms (subs yh y2h2)) (mulf (int2float (length yh)) 1e-2)
             })
           f xy0 x
@@ -61,7 +61,7 @@ let true_y = lam xy0 : (FloatA, [FloatA]). lam x : FloatPC.
       , add = adds
       , smul = smuls
       , ok =
-        lam yh : [FloatP]. lam y2h2 : [FloatP].
+        lam yh : [Float]. lam y2h2 : [Float].
           ltf (l2norms (subs yh y2h2)) (mulf (int2float (length yh)) 1e-2)
       })
     (ode #var"true_θ")  xy0 x
