@@ -3,23 +3,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter
 
-BLUE = "#3498db"
-RED = "#e74c3c"
-GREEN = "#27AE60"
-CYAN = "cyan"
+plt.style.use("tableau-colorblind10")
 
-BLUE = "tab:blue"
-RED = "tab:red"
-GREEN = "tab:green"
-CYAN = "cyan"
-ORANGE = "tab:orange"
-GRAY = "tab:gray"
-PURPLE = "tab:purple"
-
-CB_BLUE = "#0072B2"
 CB_BLACK = "#000000"
 CB_ORANGE = "#E69F00"
 CB_SKY_BLUE = "#56B4E9"
+CB_BLUISH_GREEN = "#009E73"
+CB_YELLOW = "#F0E442"
+CB_BLUE = "#0072B2"
+CB_VERMILLION = "#D55E00"
+CB_REDDISH_PURPLE = "#CC79A7"
+
+BLUE = CB_BLUE
+RED = CB_VERMILLION
+GREEN = CB_BLUISH_GREEN
+GRAY = "tab:gray"
 
 
 def post_process_weights_samples(weights, samples):
@@ -78,13 +76,9 @@ def plot_scalar_dist(file_name):
             fig.suptitle(file_name)
             plot_hist(ax, samples, weights, 200)
             fig.tight_layout()
+            fig.savefig(file_name.replace("-run.json", ".pdf"))
     except FileNotFoundError:
-        print(f"{file} not found")
-
-
-plot_scalar_dist("bayesian-parameter-estimation-run.json")
-plot_scalar_dist("bayesian-parameter-estimation-ivp-solution-run.json")
-plot_scalar_dist("bayesian-parameter-estimation-ivp-sensitivity-run.json")
+        print(f"{file_name} not found")
 
 
 def plot_trace(
@@ -162,9 +156,49 @@ def plot_trace_dist(file_name, prey_label, pred_label, yminofs, ymaxofs):
                 yminofs,
             )
             fig.tight_layout()
+            fig.savefig(file_name.replace("-run.json", ".pdf"))
     except FileNotFoundError:
         print(f"{file_name} not found")
 
+
+def plot_sens_dist(file_name):
+    try:
+        with open(file_name, "r") as file:
+            data = json.load(file)
+            xs = np.asarray(data["xs"])
+            samples = np.asarray(data["samples"])
+            plt.rcParams.update({"font.size": 24})
+            fig, ax = plt.subplots(
+                1, 2, figsize=(20, 4), constrained_layout=True
+            )
+
+            colors = [CB_BLUE, CB_ORANGE, CB_BLACK]
+
+            def plot(j):
+                for i in range(len(samples)):
+                    ys = samples[i][j].transpose()
+                    for k in range(len(ys)):
+                        ax[j].plot(
+                            xs,
+                            ys[k],
+                            alpha=5 * min(1, 1 / len(samples)),
+                            color=colors[k % len(colors)],
+                        )
+                        set_grid(ax[j])
+                        ax[j].set_xlabel(r"$x$")
+
+            plot(0)
+            plot(1)
+            ax[0].set_ylabel(r"$s_{\theta}(x)$")
+            # fig.tight_layout()
+            fig.savefig(file_name.replace("-run.json", ".pdf"))
+    except FileNotFoundError:
+        print(f"{file_name} not found")
+
+
+plot_scalar_dist("bayesian-parameter-estimation-run.json")
+plot_scalar_dist("bayesian-parameter-estimation-ivp-solution-run.json")
+plot_scalar_dist("bayesian-parameter-estimation-ivp-sensitivity-run.json")
 
 plot_trace_dist(
     "bayesian-parameter-estimation-ivp-solution-trace-run.json",
@@ -242,44 +276,10 @@ try:
                     5,
                     7,
                 )
+                fig.savefig("bayesian-parameter-estimation-combined.pdf")
 
 except FileNotFoundError:
     print(f"All files not found")
-
-
-def plot_sens_dist(file_name):
-    try:
-        with open(file_name, "r") as file:
-            data = json.load(file)
-            xs = np.asarray(data["xs"])
-            samples = np.asarray(data["samples"])
-            plt.rcParams.update({"font.size": 24})
-            fig, ax = plt.subplots(
-                1, 2, figsize=(20, 4), constrained_layout=True
-            )
-
-            colors = [CB_BLUE, CB_ORANGE, CB_BLACK]
-
-            def plot(j):
-                for i in range(len(samples)):
-                    ys = samples[i][j].transpose()
-                    for k in range(len(ys)):
-                        ax[j].plot(
-                            xs,
-                            ys[k],
-                            alpha=5 * min(1, 1 / len(samples)),
-                            color=colors[k % len(colors)],
-                        )
-                        set_grid(ax[j])
-                        ax[j].set_xlabel(r"$x$")
-
-            plot(0)
-            plot(1)
-            ax[0].set_ylabel(r"$s_{\theta}(x)$")
-            # fig.tight_layout()
-    except FileNotFoundError:
-        print(f"{file_name} not found")
-
 
 plot_sens_dist("ode-sensitivites-two-methods-scalar-run.json")
 plot_sens_dist("ode-sensitivites-two-methods-run.json")
@@ -312,6 +312,7 @@ try:
         ax[1].set_xlabel(r"$x$")
         ax[1].set_ylabel(r"$w(x)$")
         # fig.tight_layout()
+        fig.savefig("rode.pdf")
 except FileNotFoundError:
     print(f"{file} not found")
 
@@ -385,6 +386,7 @@ try:
 
         set_axis(ax[1], ax1tw)
         set_legend(ax[1], ax1tw, "lower left")
+        fig.savefig("tumor-inhibitor-rode-overview.pdf")
 
 except FileNotFoundError:
     print(f"{file} not found")
@@ -472,6 +474,7 @@ try:
         ax[2][1].set_xlabel(r"$t$")
 
         fig.align_ylabels(ax)
+        fig.savefig("tumor-inhibitor-rode.pdf")
 
         fig, ax = plt.subplots(1, 1, figsize=(6, 3), constrained_layout=True)
         for i in range(len(ws)):
@@ -487,9 +490,9 @@ try:
         ax.set_xlabel(r"$t$")
 
         fig.align_ylabels(ax)
+        fig.savefig("tumor-inhibitor-rode-wiener.pdf")
 
 except FileNotFoundError:
     print(f"{file} not found")
 
-plt.style.use("tableau-colorblind10")
 plt.show()

@@ -25,4 +25,4 @@ plots:
 
 .PHONY: clean
 clean:
-	rm -rf *.json *.exe
+	rm -rf *.json *.exe *.pdf
