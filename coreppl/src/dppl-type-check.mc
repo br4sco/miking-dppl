@@ -1554,7 +1554,7 @@ lang DTCTypeOfSolveODE = SolveODE + IsIsomorficToRn + DTCTypeOfBase
             let initTyErr = lam x. lam y.
               result.err
                 (DTCArgError (infoTm r.init, Some (initTy x y, init.ty))) in
-            let endTimeTy = lam cs. ityfloatX_ r.info cs in
+            let endTimeTy = lam c. mulXType dtcPL (ityfloatc_ r.info c) in
             let endTimeErr = lam cs.
               result.err
                 (DTCArgError
@@ -1572,24 +1572,24 @@ lang DTCTypeOfSolveODE = SolveODE + IsIsomorficToRn + DTCTypeOfBase
                     (dtcXDown (ModA ())))
             then
               if subtype init.ty (initTy (ModA ()) (ModA ())) then
-                if subtype endTime.ty (endTimeTy dtcPC) then ok ()
-                else endTimeErr dtcPC
+                if subtype endTime.ty (endTimeTy (ModA ())) then ok ()
+                else endTimeErr (ModA ())
               else initTyErr (ModA ()) (ModA ())
             else
               if subtype model.ty
                    (modelTy (ModC ()) (ModS ()) [ModS ()] [ModS ()])
               then
                 if subtype init.ty (initTy (ModC ()) (ModS ())) then
-                  if subtype endTime.ty (endTimeTy (dtcXDown (ModC ()))) then ok ()
-                  else endTimeErr dtcPC
+                  if subtype endTime.ty (endTimeTy (ModC ())) then ok ()
+                  else endTimeErr (ModC ())
                 else initTyErr (ModC ()) (ModS ())
               else
                 if subtype model.ty
                      (modelTy (ModC ()) (ModL ()) [ModC ()] (dtcXDown (ModA ())))
                 then
                   if subtype init.ty (initTy (ModC ()) (ModC ())) then
-                    if subtype endTime.ty (endTimeTy dtcPC) then ok ()
-                    else endTimeErr dtcPC
+                    if subtype endTime.ty (endTimeTy (ModC ())) then ok ()
+                    else endTimeErr (ModC ())
                   else initTyErr (ModC ()) (ModC ())
                 else
                   modelerr ()

@@ -278,7 +278,7 @@ let _mollifierStep = lam a. lam b. lam x.
 
 let _smoothdivf : Float -> Float -> Float
   = lam a. lam b.
-    if _eqf a 0. then 0. else _divf (_mulf a (_mollifierStep 0.5 1. b)) b
+    if _eqf b 0. then 0. else _divf (_mulf a (_mollifierStep 0.5 1. b)) b
 
 -- let _smoothdivf : Float -> Float -> Float
 --   = lam a. lam b.
