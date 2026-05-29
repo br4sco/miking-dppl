@@ -142,6 +142,7 @@ lang ElementaryFunctionsTransform = ElementaryFunctions
   | CPow _ -> withInfo (infoTm tm) (nvar_ (stringToName "pow"))
   | CAbsf _ -> withInfo (infoTm tm) (nvar_ (stringToName "absf"))
   | CRecipabsf _ -> withInfo (infoTm tm) (nvar_ (stringToName "recipabsf"))
+  | CSmoothdivf _ -> withInfo (infoTm tm) (nvar_ (stringToName "smoothdivf"))
   | _ -> tm
 
   sem _elementaryFunctionsTransformRuntimeIds =| _ -> [
@@ -727,6 +728,7 @@ lang ADLoader = MCoreLoader + CorePPL + Delayed + Diff +
   | CPow _ -> adliftConstH env e "pow"
   | CAbsf _ -> adliftConstH env e "absf"
   | CRecipabsf _ -> adliftConstH env e "recipabsf"
+  | CSmoothdivf _ -> adliftConstH env e "smoothdivf"
   | CFloat2string _ -> adliftConstH env e "float2string"
   | const ->
     if env.config.insertFloatAssertions then

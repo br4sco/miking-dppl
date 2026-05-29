@@ -227,10 +227,10 @@ recursive let _powf : Float -> Float -> Float
       _uc (e, _powf (_uc ap) b, _mulf (dfda (_uc ap) b) (_uc at))
     case _ then
       match _uc (a, b) with ((ea, ap, at), (eb, bp, bt)) in
-      if ltf ea eb then
+      if _ltf ea eb then
         _uc (eb, _powf a (_uc bp), _mulf (dfdb a (_uc bp)) (_uc bt))
       else
-        if ltf eb ea then
+        if _ltf eb ea then
           _uc (ea, _powf (_uc ap) b, _mulf (dfda (_uc ap) b) (_uc at))
         else
           _uc
@@ -255,7 +255,7 @@ recursive let _absf : Float -> Float
     if isfloat a then absf a
     else
       match _uc a with (e, ap, at) in
-      _uc (e, _absf (_uc ap), if ltf (_uc ap) 0. then -1. else 1.)
+      _uc (e, _absf (_uc ap), if _ltf (_uc ap) 0. then -1. else 1.)
 end
 
 recursive let _recipabsf : Float -> Float
@@ -270,6 +270,15 @@ recursive let _recipabsf : Float -> Float
           (_negf (_mulf ap at))
           (_pow (_addf (_mulf ap ap) (mulf 0.01 0.01)) (divf 3. 2.)) )
 end
+
+let _bump = lam a : Float. if _leqf a 0. then 0. else _exp (_divf -1. a)
+let _mollifierStep = lam a. lam b. lam x.
+  _divf (_bump (_subf x a)) (_addf (_bump (_subf x a)) (_bump (_subf b x)))
+
+
+let _smoothdivf : Float -> Float -> Float
+  = lam a. lam b.
+    _divf (_mulf a (_mollifierStep 0.5 1. b)) b
 
 recursive let float2string_ : Float -> String
   = lam a.
@@ -301,6 +310,7 @@ let sqrt : Float -> Float = _sqrt
 let pow : Float -> Float -> Float = _pow
 let absf : Float -> Float = _absf
 let recipabsf : Float -> Float = _recipabsf
+let smoothdivf : Float -> Float -> Float = _smoothdivf
 let float2string : Float -> String = float2string_
 
 let diff : ([Float] -> [Float]) -> [Float] -> [Float] -> [Float]

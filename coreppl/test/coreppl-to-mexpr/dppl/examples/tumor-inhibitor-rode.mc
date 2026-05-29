@@ -63,22 +63,22 @@ let rode = lam t : ().
       lam tcpi0 : (Float, (FloatS, FloatS, FloatS)).
         lam t : Float.
           -- Stochastic Process. express inhibitor production from normal tissue.
-          let z = lam w : FloatA.
+          let z = lam w : FloatS.
             mulf z0
               (subf 1.
                  (mulf
                     (mulf 2. nu)
-                    (mulf w (recipabsf (addf 1. (mulf w w)))))) in
+                    (smoothdivf w (addf 1. (mulf w w))))) in
 
           -- ODE model
           let f1 = lam cpi : (FloatS, FloatS, FloatS).
             match cpi with (c, p, i) in
             subf
               (mulf
-                 (mulf
+                 (smoothdivf
                     (mulf r c)
-                    (recipabsf (addf 1. (mulf e c))))
-                 (mulf p (recipabsf (addf 1. i))))
+                    (addf 1. (mulf e c)))
+                 (smoothdivf p (addf 1. i)))
               (mulf mu c) in
           let f2 = lam cpi : (FloatS, FloatS, FloatS).
             match cpi with (c, p, i) in subf (mulf aP c) (mulf bP p) in
