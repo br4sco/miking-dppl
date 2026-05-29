@@ -1656,15 +1656,22 @@ lang DTCElementaryFunctionsType = ElementaryFunctions + DTCTyConst
     let tyfloat = ityfloatc_ info (ModA ()) in
     result.ok (iarr_ info tyfloat tyfloat)
   | (CLog _ | CSqrt _, _) ->
+    let tyfloatA = ityfloatc_ info (ModA ()) in
     let tyfloat = ityfloatc_ info (ModP ()) in
-    result.ok (iarr_ info tyfloat tyfloat)
+    result.ok (iarr_ info tyfloat tyfloatA)
   | (CAbsf _, _) ->
+    let tyfloatA = ityfloatc_ info (ModA ()) in
     let tyfloat = ityfloatX_ info dtcPL in
-    result.ok (iarr_ info tyfloat tyfloat)
+    result.ok (iarr_ info tyfloat tyfloatA)
   | (CPow _, _) ->
     let tyfloat = ityfloatc_ info (ModA ()) in
     let arr = lam from. lam to. iarr_ info from to in
     result.ok (arr tyfloat (arr tyfloat tyfloat))
+  | (CSmoothdivf _, _) ->
+    let tyfloatA = ityfloatc_ info (ModA ()) in
+    let tyfloat = ityfloatc_ info (ModS ()) in
+    let arr = lam from. lam to. iarr_ info from to in
+    result.ok (arr tyfloat (arr tyfloat tyfloatA))
 end
 
 lang DTCCmpFloatAstType = CmpFloatAst + DTCTyConst
@@ -3101,6 +3108,8 @@ iter
   , CMulf ()
   , CDivf ()
   , CPow ()
+--  , CRrecipabsf ()
+--  , CSmoothdivf ()
   , CEqf ()
   , CLtf ()
   , CLeqf ()
@@ -3148,6 +3157,16 @@ iter
 utest
   _typeOf [(_x, flt _A)] (absf_ x)
   with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail in
+
+utest
+  _typeOf [(_x, flt _A), (_y, flt _A)] (smoothdivf_ x y)
+  with Left [DTCArgError (NoInfo (), None ())]
+  using eq else onFail in
+
+utest
+  _typeOf [(_x, flt _S), (_y, flt _S)] (smoothdivf_ x y)
+  with Right (_D, flt _S)
   using eq else onFail in
 
 utest

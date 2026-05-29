@@ -278,7 +278,11 @@ let _mollifierStep = lam a. lam b. lam x.
 
 let _smoothdivf : Float -> Float -> Float
   = lam a. lam b.
-    _divf (_mulf a (_mollifierStep 0.5 1. b)) b
+    if _eqf a 0. then 0. else _divf (_mulf a (_mollifierStep 0.5 1. b)) b
+
+-- let _smoothdivf : Float -> Float -> Float
+--   = lam a. lam b.
+--     _mulf a (_recipabsf b)
 
 recursive let float2string_ : Float -> String
   = lam a.
