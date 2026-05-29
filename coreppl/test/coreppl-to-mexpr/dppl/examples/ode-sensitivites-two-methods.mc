@@ -5,6 +5,19 @@ let _n = 200
 let _h = 0.05
 let times = create _n (lam i : Int. mulf _h (int2float (addi i 1)))
 
+-- Initial values
+let x0 = 0.
+let y0 = [1., 1.]
+
+-- ODE model
+let ode = lam #var"θ" : FloatA. lam x : FloatA. lam y : [FloatA].
+  let t = lotkaVolterra (#var"θ", 1., 1., 3.) (get y 0, get y 1) in
+  [t.0, t.1]
+
+-- IVP solution
+let y = lam #var"θ" : FloatA. lam xy0 : (FloatA, [FloatA]). lam x : FloatPC.
+  solve (ode #var"θ") xy0 x
+
 let f = ode
 
 let fS =
